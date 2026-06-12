@@ -1,0 +1,225 @@
+// ─────────────────────────────────────────────────────────────────
+// schema.prisma — Database models · GAD Municipal de Cañar
+// ─────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ─────────────────────────────────────────────────────────
+
+enum Role {
+  SUPERADMIN
+  CITIZEN
+  TECHNICIAN
+  SECRETARY
+  FINANCIAL
+  ARCHITECT
+  GUEST
+}
+
+enum PropertyZone {
+  URBAN
+  RURAL
+}
+
+enum RequestType {
+  CONSTRUCTION_PERMIT
+  BUILDING_LINE
+  PLAN_APPROVAL
+}
+
+enum RequestStatus {
+  DRAFT
+  PENDING_SECRETARY
+  OBSERVED
+  PENDING_TECHNICIAN
+  INSPECTION
+  PENDING_PAYMENT
+  PAID
+  APPROVED
+  REJECTED
+}
+
+// ── Models ───────────────────────────────────────────────────────
+
+/// System user (citizens, GAD officials, and external architects)
+model User {
+  id                  String            @id @default(uuid())
+  email               String            @unique
+  password_hash       String
+  first_name          String
+  last_name           String
+  national_id         String            @unique
+  phone               String?
+
+  role                Role              @default(CITIZEN)
+  active              Boolean           @default(true)
+
+  // Only for GAD technicians
+  zone                PropertyZone?
+
+  // Only for external architects
+  enabled             Boolean?          @default(false)
+  degree              String?
+  registration_number String?           // SENESCYT number
+
+  // Authentication
+  refresh_token       String?
+
+  created_at          DateTime          @default(now())
+  updated_at          DateTime          @updatedAt
+
+  // Relations
+  citizen_requests    Request[]         @relation("CitizenRequests")
+  architect_requests  Request[]         @relation("ArchitectRequests")
+  secretary_decisions SecretaryDecision[]
+  audit_logs          AuditLog[]
+
+  @@map("users")
+}
+
+/// Request / application folder for land management
+model Request {
+  id                 String             @id @default(uuid())
+  request_type       RequestType
+  status             RequestStatus      @default(PENDING_SECRETARY)
+
+  // Citizen owner of the property
+  citizen_id         String
+  citizen            User               @relation("CitizenRequests", fields: [citizen_id], references: [id])
+
+  // Architect who entered the request (optional — citizen can enter directly)
+  architect_id       String?
+  architect          User?              @relation("ArchitectRequests", fields: [architect_id], references: [id])
+
+  // Property details
+  property_id        String             @unique
+  property           Property           @relation(fields: [property_id], references: [id])
+
+  // Child relations
+  attachments        Attachment[]
+  history            RequestHistory[]
+  inspection         Inspection?
+  resolution         Resolution?
+  secretary_decision SecretaryDecision?
+
+  created_at         DateTime           @default(now())
+  updated_at         DateTime           @updatedAt
+
+  @@map("requests")
+}
+
+/// Cadastral data of the property associated with the request
+model Property {
+  id             String       @id @default(uuid())
+  cadastral_key  String?
+  address        String
+  area           Float?       // in m²
+  zone           PropertyZone
+  coordinates    String?      // UTM optional
+
+  request        Request?
+
+  @@map("properties")
+}
+
+/// Document attached to the request (plans, deeds, certificates)
+model Attachment {
+  id           String   @id @default(uuid())
+  name         String
+  type         String   // MIME type (application/pdf, image/jpeg, etc.)
+  url          String   // Local path or file URL
+  size         Int?     // size in bytes
+
+  request_id   String
+  request      Request  @relation(fields: [request_id], references: [id], onDelete: Cascade)
+
+  created_at   DateTime @default(now())
+
+  @@map("attachments")
+}
+
+/// Entry for the request status change history
+model RequestHistory {
+  id              String   @id @default(uuid())
+  previous_status String   // Previous RequestStatus value
+  new_status      String   // New RequestStatus value
+  comment         String
+  responsible     String   // Full name of official or citizen
+
+  request_id      String
+  request         Request  @relation(fields: [request_id], references: [id], onDelete: Cascade)
+
+  created_at      DateTime @default(now())
+
+  @@map("request_histories")
+}
+
+/// Technical inspection scheduled for a request
+model Inspection {
+  id           String   @id @default(uuid())
+  date         DateTime
+  technician   String   // Name of assigned technician
+  comments     String?
+  photos       String[] // URLs of photos taken on site
+
+  request_id   String   @unique
+  request      Request  @relation(fields: [request_id], references: [id], onDelete: Cascade)
+
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  @@map("inspections")
+}
+
+/// Final resolution of the request (approval, denial, or payment)
+model Resolution {
+  id              String   @id @default(uuid())
+  comments        String
+  payment_amount  Float?   // null if no charge is generated
+  items           String[] // Detail of payment items
+  resolution_date DateTime @default(now())
+
+  request_id      String   @unique
+  request         Request  @relation(fields: [request_id], references: [id], onDelete: Cascade)
+
+  @@map("resolutions")
+}
+
+/// Audit log of all system actions
+model AuditLog {
+  id         String   @id @default(uuid())
+  action     String   // E.g.: LOGIN, CREATE_REQUEST, UPDATE_STATUS
+  details    String
+  ip_address String?
+
+  user_id    String?
+  user       User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  user_email String   // We keep the email in case the user gets deleted
+
+  created_at DateTime @default(now())
+
+  @@map("audit_logs")
+}
+
+model SecretaryDecision {
+  id            String   @id @default(uuid())
+  approved      Boolean
+  remarks       String?  @db.Text
+
+  request_id    String   @unique
+  request       Request  @relation(fields: [request_id], references: [id], onDelete: Cascade)
+
+  secretary_id  String
+  secretary     User     @relation(fields: [secretary_id], references: [id])
+
+  created_at    DateTime @default(now())
+
+  @@map("secretary_decisions")
+}

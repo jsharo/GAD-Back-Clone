@@ -1,0 +1,22 @@
+# Dependencias
+node_modules/
+dist/
+
+# Variables de entorno (NUNCA subir al repositorio)
+.env
+
+# Prisma
+prisma/*.db
+prisma/*.db-journal
+
+# Archivos subidos
+uploads/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/
+.idea/
+*.DS_Store
