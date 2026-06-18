@@ -136,6 +136,7 @@ model Attachment {
   type         String   // MIME type (application/pdf, image/jpeg, etc.)
   url          String   // Local path or file URL
   size         Int?     // size in bytes
+  hash         String?  // SHA-256 file hash
 
   /// Document folder/category: PLANOS | DOCUMENTOS_LEGALES | INFORMES | OTROS
   folder       String   @default("OTROS")
@@ -210,6 +211,9 @@ model AuditLog {
   user_id    String?
   user       User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
   user_email String   // We keep the email in case the user gets deleted
+
+  previous_hash String?
+  current_hash  String?
 
   created_at DateTime @default(now())
 

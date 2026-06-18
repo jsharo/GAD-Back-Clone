@@ -5,6 +5,7 @@ import {
   UnprocessableEntityException,
   ForbiddenException,
 } from '@nestjs/common';
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { PrismaService } from '../prisma/prisma.service';
@@ -422,10 +423,31 @@ export class RequestService {
       const upload_dir = './uploads/inspections';
       if (!fs.existsSync(upload_dir)) fs.mkdirSync(upload_dir, { recursive: true });
       for (const file of photos) {
-        const file_name = `${Date.now()}-${file.originalname}`;
+        const hash = createHash('sha256').update(file.buffer).digest('hex');
+        const file_name = `${Date.now()}-${path.basename(file.originalname)}`;
         const file_path = path.join(upload_dir, file_name);
+        const file_url = `/uploads/inspections/${file_name}`;
         fs.writeFileSync(file_path, file.buffer);
-        photo_urls.push(`/uploads/inspections/${file_name}`);
+        photo_urls.push(file_url);
+
+        await this.prisma.attachment.create({
+          data: {
+            name: file.originalname,
+            type: file.mimetype,
+            url: file_url,
+            size: file.size,
+            hash,
+            folder: 'INFORMES',
+            request_id: id,
+          },
+        });
+
+        await this.audit_service.logAction(
+          active_user.id,
+          active_user.email,
+          'UPLOAD_INSPECTION_FILE',
+          `Inspection file uploaded for request ${id}: ${file.originalname}, sha256=${hash}`,
+        );
       }
     }
 
