@@ -1,14 +1,11 @@
-/**
- * jwt.strategy.ts — Passport strategy to validate the JWT Access Token.
- * Reads the Bearer token from the Authorization header and decodes it.
- */
-
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { UserStatus } from '@prisma/client';
+import { UsersService } from '../users/users.service';
 
 export interface JwtPayload {
-  sub: string;   // User ID
+  sub: string;
   email: string;
   role: string;
   iat?: number;
@@ -17,7 +14,7 @@ export interface JwtPayload {
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
-  constructor() {
+  constructor(private readonly usersService: UsersService) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -26,15 +23,15 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   }
 
   async validate(payload: JwtPayload) {
-    // TODO: find the user in the DB and verify that they are active
-    // const user = await this.prisma.user.findUnique({ where: { id: payload.sub } })
-    // if (!user || !user.active) throw new UnauthorizedException()
-    // return user
+    const user = await this.usersService.findById(payload.sub);
 
-    // Minimum return to make req.user available
+    if (!user || user.status !== UserStatus.ACTIVE) {
+      throw new UnauthorizedException('User is inactive or not found');
+    }
+
     return {
-      id: payload.sub,
-      email: payload.email,
+      id: user.id,
+      email: user.email,
       role: payload.role,
     };
   }

@@ -1,16 +1,12 @@
-/**
- * jwt-refresh.strategy.ts — Passport strategy for the Refresh Token.
- * Used exclusively on the POST /auth/refresh route.
- */
-
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { Request } from 'express';
+import { TokensService } from './tokens.service';
 
 @Injectable()
 export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
-  constructor() {
+  constructor(private readonly tokensService: TokensService) {
     super({
       jwtFromRequest: ExtractJwt.fromBodyField('refreshToken'),
       ignoreExpiration: false,
@@ -19,24 +15,25 @@ export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh'
     });
   }
 
-  async validate(req: Request, payload: any) {
-    const refresh_token = req.body?.refreshToken;
+  async validate(req: Request, payload: { sub: string }) {
+    const refreshToken = req.body?.refreshToken as string | undefined;
 
-    if (!refresh_token) {
+    if (!refreshToken) {
       throw new UnauthorizedException('Refresh token not provided');
     }
 
-    // TODO:
-    // 1. Find the user by payload.sub
-    // 2. Compare bcrypt.compare(refresh_token, user.refresh_token)
-    // 3. If not matching: throw new ForbiddenException()
-    // 4. Return the full user object
+    const storedToken = await this.tokensService.validateRefreshToken(
+      payload.sub,
+      refreshToken,
+    );
+
+    if (!storedToken) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
 
     return {
       id: payload.sub,
-      email: payload.email,
-      role: payload.role,
-      refresh_token,
+      refreshToken,
     };
   }
 }
