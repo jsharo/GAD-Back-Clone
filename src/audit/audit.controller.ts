@@ -14,7 +14,7 @@ export class AuditController {
   constructor(private readonly audit_service: AuditService) {}
 
   @Get()
-  @Roles(Role.SUPERADMIN)
+  @Roles(Role.ADMINISTRATOR)
   @ApiOperation({ summary: 'List all audit logs' })
   async findAll() {
     const data = await this.audit_service.findAll();
@@ -22,7 +22,7 @@ export class AuditController {
   }
 
   @Get('verify')
-  @Roles(Role.SUPERADMIN)
+  @Roles(Role.ADMINISTRATOR)
   @ApiOperation({ summary: 'Verify integrity and immutability of the log chain' })
   async verify() {
     const data = await this.audit_service.verifyIntegrity();

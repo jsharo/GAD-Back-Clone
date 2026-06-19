@@ -66,20 +66,7 @@ export class RequestService {
     let effective_citizen_id: string;
     let architect_id: string | null = null;
 
-    if (acting_role === Role.ARCHITECT) {
-      // El profesional debe estar habilitado por el GAD
-      const architect = await this.prisma.user.findUnique({
-        where: { id: active_user.id },
-        select: { enabled: true },
-      });
-      if (!architect?.enabled) {
-        throw new ForbiddenException(
-          'El profesional no está habilitado para operar en el sistema. ' +
-          'Contacte a la administración del GAD Cañar.',
-        );
-      }
-
-      // El ARCHITECT debe proveer el citizen_id del propietario
+    if (acting_role === Role.USER) {
       if (!create_dto.citizen_id) {
         throw new BadRequestException(
           'El profesional habilitado debe especificar el "citizen_id" del propietario del predio.',
@@ -87,9 +74,13 @@ export class RequestService {
       }
 
       // Verificar que el ciudadano propietario exista
-      const citizen = await this.prisma.user.findUnique({
-        where: { id: create_dto.citizen_id },
-        select: { id: true, role: true },
+      const citizen = await this.prisma.user.findFirst({
+        where: {
+          id: create_dto.citizen_id,
+          deletedAt: null,
+          roleAssignments: { some: { role: { name: Role.CITIZEN } } },
+        },
+        select: { id: true },
       });
       if (!citizen) {
         throw new NotFoundException(
@@ -166,10 +157,10 @@ export class RequestService {
     const query_options: any = {
       include: {
         citizen: {
-          select: { id: true, email: true, first_name: true, last_name: true },
+          select: { id: true, email: true, name: true, lastname: true },
         },
         architect: {
-          select: { id: true, email: true, first_name: true, last_name: true },
+          select: { id: true, email: true, name: true, lastname: true },
         },
         property: true,
       },
@@ -196,7 +187,7 @@ export class RequestService {
       where: { architect_id },
       include: {
         citizen: {
-          select: { id: true, email: true, first_name: true, last_name: true },
+          select: { id: true, email: true, name: true, lastname: true },
         },
         property: true,
       },
@@ -209,10 +200,10 @@ export class RequestService {
       where: { id },
       include: {
         citizen: {
-          select: { id: true, email: true, first_name: true, last_name: true, phone: true },
+          select: { id: true, email: true, name: true, lastname: true },
         },
         architect: {
-          select: { id: true, email: true, first_name: true, last_name: true, registration_number: true },
+          select: { id: true, email: true, name: true, lastname: true },
         },
         property: true,
         attachments: { orderBy: [{ folder: 'asc' }, { created_at: 'asc' }] },

@@ -1,206 +1,194 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
-import * as bcrypt from 'bcryptjs';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { UserStatus } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { CreateInstitutionalUserDto } from './dto/create-institutional-user.dto';
-import { UpdateZoneDto } from './dto/update-zone.dto';
-import { ToggleActiveDto } from './dto/toggle-active.dto';
-import { PropertyZone, Role } from '@prisma/client';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { USER_PUBLIC_SELECT } from './constants/user.select';
+
+const PASSWORD_SALT_ROUNDS = 12;
 
 @Injectable()
 export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly audit_service: AuditService,
+    private readonly auditService: AuditService,
   ) {}
 
-  async createInstitutional(dto: CreateInstitutionalUserDto, admin_user: any) {
-    const existing_email = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-    });
-    if (existing_email) {
-      throw new ConflictException('Email is already registered');
-    }
-
-    const existing_national_id = await this.prisma.user.findUnique({
-      where: { national_id: dto.national_id },
-    });
-    if (existing_national_id) {
-      throw new ConflictException('National ID is already registered');
-    }
-
-    const hashed_password = await bcrypt.hash(dto.password, 12);
-
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        password_hash: hashed_password,
-        first_name: dto.first_name,
-        last_name: dto.last_name,
-        national_id: dto.national_id,
-        phone: dto.phone || null,
-        role: dto.role,
-        active: true,
-      },
+  async validateCredentials(email: string, password: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { email, deletedAt: null },
       select: {
         id: true,
         email: true,
-        first_name: true,
-        last_name: true,
-        national_id: true,
-        phone: true,
-        role: true,
-        zone: true,
-        active: true,
-        created_at: true,
+        password: true,
+        status: true,
       },
     });
 
-    await this.audit_service.logAction(
-      admin_user.id,
-      admin_user.email,
-      'CREATE_USER_INSTITUTIONAL',
-      `Institutional user created: ${user.email} with role ${user.role}`,
-    );
+    if (!user || user.status !== UserStatus.ACTIVE) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    return { id: user.id, email: user.email };
+  }
+
+  async findById(id: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id, deletedAt: null },
+      select: USER_PUBLIC_SELECT,
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
 
     return user;
   }
 
   async findAll() {
     return this.prisma.user.findMany({
-      select: {
-        id: true,
-        email: true,
-        first_name: true,
-        last_name: true,
-        national_id: true,
-        phone: true,
-        role: true,
-        zone: true,
-        active: true,
-        created_at: true,
-      },
-      orderBy: { created_at: 'desc' },
+      where: { deletedAt: null },
+      select: USER_PUBLIC_SELECT,
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  async findTechnicians() {
+  async findByRole(roleName: string) {
     return this.prisma.user.findMany({
-      where: { role: Role.TECHNICIAN, active: true },
-      select: {
-        id: true,
-        email: true,
-        first_name: true,
-        last_name: true,
-        national_id: true,
-        phone: true,
-        role: true,
-        zone: true,
-        active: true,
-        created_at: true,
+      where: {
+        deletedAt: null,
+        status: UserStatus.ACTIVE,
+        roleAssignments: {
+          some: { role: { name: roleName } },
+        },
       },
-      orderBy: { created_at: 'desc' },
+      select: USER_PUBLIC_SELECT,
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  async getDashboardStats() {
-    const [total, technicians, citizens] = await Promise.all([
-      this.prisma.user.count(),
-      this.prisma.user.count({ where: { role: Role.TECHNICIAN } }),
-      this.prisma.user.count({ where: { role: Role.CITIZEN } }),
-    ]);
+  private async assertUniqueEmail(email: string) {
+    const existingEmail = await this.prisma.user.findUnique({ where: { email } });
 
-    const requests_by_status = await this.prisma.request.groupBy({
-      by: ['status'],
-      _count: true,
-    });
-
-    const requests = {
-      DRAFT: 0,
-      PENDING_SECRETARY: 0,
-      OBSERVED: 0,
-      PENDING_TECHNICIAN: 0,
-      INSPECTION: 0,
-      PENDING_PAYMENT: 0,
-      PAID: 0,
-      APPROVED: 0,
-      REJECTED: 0,
-    };
-
-    for (const group of requests_by_status) {
-      if (group.status in requests) {
-        requests[group.status as keyof typeof requests] = group._count;
-      }
+    if (existingEmail && !existingEmail.deletedAt) {
+      throw new ConflictException('Email is already registered');
     }
-
-    return {
-      users: {
-        total,
-        technicians,
-        citizens,
-      },
-      requests,
-    };
   }
 
-  async updateZone(id: string, update_zone_dto: UpdateZoneDto, admin_user: any) {
-    const user = await this.prisma.user.findUnique({ where: { id } });
-    if (!user) {
-      throw new NotFoundException('User not found');
+  private async assertUniqueCedula(cedula: string, excludeUserId?: string) {
+    const existingCedula = await this.prisma.user.findUnique({ where: { cedula } });
+
+    if (
+      existingCedula &&
+      !existingCedula.deletedAt &&
+      existingCedula.id !== excludeUserId
+    ) {
+      throw new ConflictException('National ID is already registered');
     }
-    const updated_user = await this.prisma.user.update({
-      where: { id },
+  }
+
+  /** Solo persiste el usuario en base de datos. */
+  async create(dto: CreateUserDto) {
+    await this.assertUniqueEmail(dto.email);
+
+    if (dto.cedula) {
+      await this.assertUniqueCedula(dto.cedula);
+    }
+
+    const hashedPassword = await bcrypt.hash(dto.password, PASSWORD_SALT_ROUNDS);
+
+    return this.prisma.user.create({
       data: {
-        zone: update_zone_dto.zone as PropertyZone,
+        email: dto.email,
+        password: hashedPassword,
+        cedula: dto.cedula ?? null,
+        name: dto.name ?? null,
+        lastname: dto.lastname ?? null,
+        direction: dto.direction ?? null,
+        status: UserStatus.ACTIVE,
+        emailVerified: false,
       },
-      select: {
-        id: true,
-        email: true,
-        first_name: true,
-        last_name: true,
-        role: true,
-        zone: true,
-        active: true,
-      },
+      select: USER_PUBLIC_SELECT,
+    });
+  }
+
+  async update(id: string, dto: UpdateUserDto, actor: { id: string; email: string }) {
+    await this.findById(id);
+
+    if (dto.cedula) {
+      await this.assertUniqueCedula(dto.cedula, id);
+    }
+
+    const user = await this.prisma.user.update({
+      where: { id },
+      data: dto,
+      select: USER_PUBLIC_SELECT,
     });
 
-    await this.audit_service.logAction(
-      admin_user.id,
-      admin_user.email,
-      'UPDATE_ZONE',
-      `Zone of technician ${user.email} updated to ${update_zone_dto.zone}`,
+    await this.auditService.logAction(
+      actor.id,
+      actor.email,
+      'UPDATE_USER',
+      `User ${user.email} updated`,
     );
 
-    return updated_user;
+    return user;
   }
 
-  async toggleActive(id: string, toggle_active_dto: ToggleActiveDto, admin_user: any) {
-    const user = await this.prisma.user.findUnique({ where: { id } });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-    const updated_user = await this.prisma.user.update({
+  async setStatus(
+    id: string,
+    status: UserStatus,
+    actor: { id: string; email: string },
+  ) {
+    await this.findById(id);
+
+    const user = await this.prisma.user.update({
       where: { id },
-      data: {
-        active: toggle_active_dto.active,
-      },
-      select: {
-        id: true,
-        email: true,
-        first_name: true,
-        last_name: true,
-        role: true,
-        active: true,
-      },
+      data: { status },
+      select: USER_PUBLIC_SELECT,
     });
 
-    await this.audit_service.logAction(
-      admin_user.id,
-      admin_user.email,
-      'TOGGLE_ACTIVE',
-      `Activation status of user ${user.email} changed to ${toggle_active_dto.active}`,
+    await this.auditService.logAction(
+      actor.id,
+      actor.email,
+      'UPDATE_USER_STATUS',
+      `User ${user.email} status changed to ${status}`,
     );
 
-    return updated_user;
+    return user;
+  }
+
+  async softDelete(id: string, actor: { id: string; email: string }) {
+    await this.findById(id);
+
+    const user = await this.prisma.user.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        status: UserStatus.INACTIVE,
+      },
+      select: USER_PUBLIC_SELECT,
+    });
+
+    await this.auditService.logAction(
+      actor.id,
+      actor.email,
+      'SOFT_DELETE_USER',
+      `User ${user.email} soft deleted`,
+    );
+
+    return user;
   }
 }

@@ -48,7 +48,7 @@ export class RequestController {
   // Profesional: POST /requests  con citizen_id en el body
   // ──────────────────────────────────────────────────────────────────────────
   @Post()
-  @Roles(Role.CITIZEN, Role.ARCHITECT, Role.SUPERADMIN)
+  @Roles(Role.CITIZEN, Role.USER, Role.ADMINISTRATOR)
   @ApiOperation({
     summary: 'Crear una solicitud de trámite',
     description:
@@ -73,7 +73,7 @@ export class RequestController {
   }
 
   @Get('my-filings')
-  @Roles(Role.ARCHITECT, Role.SUPERADMIN)
+  @Roles(Role.USER, Role.ADMINISTRATOR)
   @ApiOperation({ summary: 'Expedientes ingresados por el profesional autenticado' })
   async findMyFilings(@CurrentUser() user: any) {
     const data = await this.request_service.findByArchitect(user.id);
@@ -81,7 +81,7 @@ export class RequestController {
   }
 
   @Get()
-  @Roles(Role.SECRETARY, Role.SUPERADMIN, Role.TECHNICIAN, Role.FINANCIAL)
+  @Roles(Role.SECRETARY, Role.ADMINISTRATOR, Role.TECHNICIAN, Role.FINANCIAL)
   @ApiOperation({ summary: 'Listar todas las solicitudes (filtro opcional por estado)' })
   @ApiQuery({ name: 'status', required: false, description: 'Filtrar por estado de la solicitud' })
   async findAll(@Query('status') status?: string) {
@@ -100,7 +100,7 @@ export class RequestController {
   // REVISIÓN DE SECRETARÍA — Validación de firma + decisión de avance
   // ──────────────────────────────────────────────────────────────────────────
   @Post(':id/secretary-review')
-  @Roles(Role.SECRETARY, Role.SUPERADMIN)
+  @Roles(Role.SECRETARY, Role.ADMINISTRATOR)
   @ApiOperation({
     summary: 'Revisión de la secretaría: validar firma del PDF y aprobar/observar el expediente',
     description:
@@ -122,7 +122,7 @@ export class RequestController {
   // ACTUALIZACIÓN DE ESTADO GENÉRICA (FINANCIAL / SUPERADMIN)
   // ──────────────────────────────────────────────────────────────────────────
   @Patch(':id/status')
-  @Roles(Role.SECRETARY, Role.SUPERADMIN, Role.TECHNICIAN, Role.FINANCIAL)
+  @Roles(Role.SECRETARY, Role.ADMINISTRATOR, Role.TECHNICIAN, Role.FINANCIAL)
   @ApiOperation({
     summary: 'Actualizar estado de la solicitud (uso general)',
     description: 'Para transiciones manuales como PAID → APPROVED. La secretaría usa /secretary-review.',
@@ -140,7 +140,7 @@ export class RequestController {
   // PROGRAMAR INSPECCIÓN
   // ──────────────────────────────────────────────────────────────────────────
   @Post(':id/schedule')
-  @Roles(Role.SECRETARY, Role.SUPERADMIN)
+  @Roles(Role.SECRETARY, Role.ADMINISTRATOR)
   @ApiOperation({ summary: 'Programar inspección técnica → estado INSPECTION' })
   async scheduleInspection(
     @Param('id') id: string,
@@ -155,7 +155,7 @@ export class RequestController {
   // INFORME DE INSPECCIÓN (con fotos)
   // ──────────────────────────────────────────────────────────────────────────
   @Post(':id/inspection-report')
-  @Roles(Role.TECHNICIAN, Role.SUPERADMIN)
+  @Roles(Role.TECHNICIAN, Role.ADMINISTRATOR)
   @ApiOperation({ summary: 'Subir informe técnico y fotos de la inspección' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FilesInterceptor('photos', 5))
@@ -173,7 +173,7 @@ export class RequestController {
   // RESOLUCIÓN — el sistema calcula el monto automáticamente
   // ──────────────────────────────────────────────────────────────────────────
   @Post(':id/resolve')
-  @Roles(Role.TECHNICIAN, Role.SECRETARY, Role.SUPERADMIN, Role.FINANCIAL)
+  @Roles(Role.TECHNICIAN, Role.SECRETARY, Role.ADMINISTRATOR, Role.FINANCIAL)
   @ApiOperation({
     summary: 'Resolver la solicitud (aprobar o rechazar)',
     description:
@@ -243,7 +243,7 @@ export class RequestController {
   }
 
   @Delete(':id/attachments/:attachmentId')
-  @Roles(Role.SECRETARY, Role.ARCHITECT, Role.SUPERADMIN)
+  @Roles(Role.SECRETARY, Role.USER, Role.ADMINISTRATOR)
   @ApiOperation({ summary: 'Eliminar un documento del expediente (archivo físico + registro)' })
   async deleteAttachment(
     @Param('id') id: string,

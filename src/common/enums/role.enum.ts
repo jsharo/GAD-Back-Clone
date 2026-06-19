@@ -1,13 +1,12 @@
 /**
- * role.enum.ts — GAD Cañar user roles in English.
+ * role.enum.ts — Application role names (must match `role` table seeds).
  */
 
 export enum Role {
-  SUPERADMIN = 'SUPERADMIN',
-  CITIZEN    = 'CITIZEN',
-  TECHNICIAN = 'TECHNICIAN',
-  SECRETARY  = 'SECRETARY',
-  FINANCIAL  = 'FINANCIAL',
-  ARCHITECT  = 'ARCHITECT',
-  GUEST      = 'GUEST',
+  ADMINISTRATOR = 'ADMINISTRATOR',
+  SECRETARY     = 'SECRETARY',
+  TECHNICIAN    = 'TECHNICIAN',
+  USER          = 'USER',
+  CITIZEN       = 'CITIZEN',
+  FINANCIAL     = 'FINANCIAL',
 }

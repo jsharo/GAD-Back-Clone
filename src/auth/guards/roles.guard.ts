@@ -24,7 +24,7 @@ export class RolesGuard implements CanActivate {
     }
 
     // SUPERADMIN tiene acceso a todo (opcional, ajusta según necesidad)
-    if (user.role === Role.SUPERADMIN) {
+    if (user.role === Role.ADMINISTRATOR) {
       return true;
     }
 

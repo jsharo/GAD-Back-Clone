@@ -13,14 +13,14 @@ datasource db {
 
 // ── Enums ─────────────────────────────────────────────────────────
 
-enum Role {
-  SUPERADMIN
-  CITIZEN
-  TECHNICIAN
-  SECRETARY
-  FINANCIAL
-  ARCHITECT
-  GUEST
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum RefreshTokenStatus {
+  ACTIVE
+  REVOKED
 }
 
 enum PropertyZone {
@@ -48,169 +48,248 @@ enum RequestStatus {
 
 // ── Models ───────────────────────────────────────────────────────
 
-/// System user (citizens, GAD officials, and external architects)
 model User {
-  id                  String            @id @default(uuid())
-  email               String            @unique
-  password_hash       String
-  first_name          String
-  last_name           String
-  national_id         String            @unique
-  phone               String?
+  id        String  @id @default(cuid())
+  name      String?
+  lastname  String?
+  password  String
+  email     String  @unique
+  cedula    String? @unique
+  direction String?
 
-  role                Role              @default(CITIZEN)
-  active              Boolean           @default(true)
+  status UserStatus @default(ACTIVE)
 
-  // Only for GAD technicians
-  zone                PropertyZone?
+  emailVerified      Boolean   @default(false) @map("email_verified")
+  verificationCode   String?   @map("verification_code")
+  verificationExpiry DateTime? @map("verification_expiry")
 
-  // Only for external architects
-  enabled             Boolean?          @default(false)
-  degree              String?
-  registration_number String?           // SENESCYT number
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
 
-  // Authentication
-  refresh_token       String?
+  // User module relations
+  permissions          UserPermission[]
+  roleAssignments      UserRole[]
+  assignedRoles        RoleAssignment[] @relation("assignedTo")
+  roleAssignmentsGiven RoleAssignment[] @relation("assignedBy")
+  refreshTokens        RefreshToken[]
 
-  created_at          DateTime          @default(now())
-  updated_at          DateTime          @updatedAt
+  // External module relations
+  citizenRequests    Request[]             @relation("CitizenRequests")
+  architectRequests  Request[]             @relation("ArchitectRequests")
+  auditLogs          AuditLog[]
+  secretaryDecisions SecretaryDecision[]
 
-  // Relations
-  citizen_requests    Request[]         @relation("CitizenRequests")
-  architect_requests  Request[]         @relation("ArchitectRequests")
-  secretary_decisions SecretaryDecision[]
-  audit_logs          AuditLog[]
-
-  @@map("users")
+  @@map("user")
 }
 
-/// Request / application folder for land management
+model RefreshToken {
+  id        String             @id @default(cuid())
+  userId    String             @map("user_id")
+  tokenHash String             @map("token_hash")
+  status    RefreshTokenStatus @default(ACTIVE)
+  expiresAt DateTime           @map("expires_at")
+  createdAt DateTime           @default(now()) @map("created_at")
+  revokedAt DateTime?          @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("refresh_token")
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users UserPermission[]
+  roles RolePermission[]
+
+  @@map("permission")
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  permissions     RolePermission[]
+  users           UserRole[]
+  roleAssignments RoleAssignment[]
+
+  @@map("role")
+}
+
+model UserPermission {
+  userId       String   @map("user_id")
+  permissionId String   @map("permission_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([userId, permissionId])
+  @@map("user_permission")
+}
+
+model RolePermission {
+  roleId       String   @map("role_id")
+  permissionId String   @map("permission_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permission")
+}
+
+model UserRole {
+  userId    String   @map("user_id")
+  roleId    String   @map("role_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@unique([userId])
+  @@map("user_role")
+}
+
+model RoleAssignment {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  roleId       String   @map("role_id")
+  assignedById String   @map("assigned_by_id")
+  assignedAt   DateTime @default(now()) @map("assigned_at")
+
+  user       User @relation("assignedTo", fields: [userId], references: [id], onDelete: Cascade)
+  role       Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  assignedBy User @relation("assignedBy", fields: [assignedById], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([roleId])
+  @@index([assignedById])
+  @@map("role_assignments")
+}
+
 model Request {
-  id                 String             @id @default(uuid())
-  request_type       RequestType
-  status             RequestStatus      @default(PENDING_SECRETARY)
+  id           String        @id @default(uuid())
+  request_type RequestType
+  status       RequestStatus @default(PENDING_SECRETARY)
 
-  // Citizen owner of the property
-  citizen_id         String
-  citizen            User               @relation("CitizenRequests", fields: [citizen_id], references: [id])
+  citizen_id String
+  citizen    User   @relation("CitizenRequests", fields: [citizen_id], references: [id])
 
-  // Architect who entered the request (optional — citizen can enter directly)
-  architect_id       String?
-  architect          User?              @relation("ArchitectRequests", fields: [architect_id], references: [id])
+  architect_id String?
+  architect    User?   @relation("ArchitectRequests", fields: [architect_id], references: [id])
 
-  // Property details
-  property_id        String             @unique
-  property           Property           @relation(fields: [property_id], references: [id])
+  property_id String   @unique
+  property    Property @relation(fields: [property_id], references: [id])
 
-  // Child relations
   attachments        Attachment[]
   history            RequestHistory[]
   inspection         Inspection?
   resolution         Resolution?
   secretary_decision SecretaryDecision?
 
-  created_at         DateTime           @default(now())
-  updated_at         DateTime           @updatedAt
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 
   @@map("requests")
 }
 
-/// Cadastral data of the property associated with the request
 model Property {
-  id             String       @id @default(uuid())
-  cadastral_key  String?
-  address        String
-  area           Float?       // in m²
-  zone           PropertyZone
-  coordinates    String?      // UTM optional
+  id            String       @id @default(uuid())
+  cadastral_key String?
+  address       String
+  area          Float?
+  zone          PropertyZone
+  coordinates   String?
 
-  request        Request?
+  request Request?
 
   @@map("properties")
 }
 
-/// Document attached to the request (plans, deeds, certificates)
 model Attachment {
-  id           String   @id @default(uuid())
-  name         String
-  type         String   // MIME type (application/pdf, image/jpeg, etc.)
-  url          String   // Local path or file URL
-  size         Int?     // size in bytes
-  hash         String?  // SHA-256 file hash
+  id         String  @id @default(uuid())
+  name       String
+  type       String
+  url        String
+  size       Int?
+  hash       String?
+  folder     String  @default("OTROS")
 
-  /// Document folder/category: PLANOS | DOCUMENTOS_LEGALES | INFORMES | OTROS
-  folder       String   @default("OTROS")
+  request_id String
+  request    Request @relation(fields: [request_id], references: [id], onDelete: Cascade)
 
-  request_id   String
-  request      Request  @relation(fields: [request_id], references: [id], onDelete: Cascade)
-
-  created_at   DateTime @default(now())
+  created_at DateTime @default(now())
 
   @@map("attachments")
 }
 
-/// Entry for the request status change history
 model RequestHistory {
-  id              String   @id @default(uuid())
-  previous_status String   // Previous RequestStatus value
-  new_status      String   // New RequestStatus value
+  id              String @id @default(uuid())
+  previous_status String
+  new_status      String
   comment         String
-  responsible     String   // Full name of official or citizen
+  responsible     String
 
-  request_id      String
-  request         Request  @relation(fields: [request_id], references: [id], onDelete: Cascade)
+  request_id String
+  request    Request @relation(fields: [request_id], references: [id], onDelete: Cascade)
 
-  created_at      DateTime @default(now())
+  created_at DateTime @default(now())
 
   @@map("request_histories")
 }
 
-/// Technical inspection scheduled for a request
 model Inspection {
-  id           String   @id @default(uuid())
-  date         DateTime
-  technician   String   // Name of assigned technician
-  comments     String?
-  photos       String[] // URLs of photos taken on site
+  id         String   @id @default(uuid())
+  date       DateTime
+  technician String
+  comments   String?
+  photos     String[]
 
-  request_id   String   @unique
-  request      Request  @relation(fields: [request_id], references: [id], onDelete: Cascade)
+  request_id String  @unique
+  request    Request @relation(fields: [request_id], references: [id], onDelete: Cascade)
 
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 
   @@map("inspections")
 }
 
-/// Final resolution of the request (approval, denial, or payment)
 model Resolution {
-  id                  String   @id @default(uuid())
-  comments            String
-  payment_amount      Float?   // null if no charge is generated
-  items               String[] // Detail of payment items
-  resolution_date     DateTime @default(now())
+  id                 String   @id @default(uuid())
+  comments           String
+  payment_amount     Float?
+  items              String[]
+  resolution_date    DateTime @default(now())
+  calculation_detail String?  @db.Text
+  auto_calculated    Boolean  @default(false)
 
-  /// Auto-calculated fee: JSON string with calculation breakdown
-  calculation_detail  String?  @db.Text
-  /// True when fee was auto-calculated by the system (not entered manually)
-  auto_calculated     Boolean  @default(false)
-
-  request_id          String   @unique
-  request             Request  @relation(fields: [request_id], references: [id], onDelete: Cascade)
+  request_id String  @unique
+  request    Request @relation(fields: [request_id], references: [id], onDelete: Cascade)
 
   @@map("resolutions")
 }
 
-/// Audit log of all system actions
 model AuditLog {
-  id         String   @id @default(uuid())
-  action     String   // E.g.: LOGIN, CREATE_REQUEST, UPDATE_STATUS
+  id         String  @id @default(uuid())
+  action     String
   details    String
   ip_address String?
 
   user_id    String?
-  user       User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
-  user_email String   // We keep the email in case the user gets deleted
+  user       User?   @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  user_email String
 
   previous_hash String?
   current_hash  String?
@@ -221,35 +300,32 @@ model AuditLog {
 }
 
 model SecretaryDecision {
-  id                  String   @id @default(uuid())
+  id                  String  @id @default(uuid())
   approved            Boolean
-  remarks             String?  @db.Text
+  remarks             String? @db.Text
+  signature_validated Boolean @default(false)
 
-  /// True when the secretary manually validated the professional's PDF signature
-  signature_validated Boolean  @default(false)
+  request_id String  @unique
+  request    Request @relation(fields: [request_id], references: [id], onDelete: Cascade)
 
-  request_id          String   @unique
-  request             Request  @relation(fields: [request_id], references: [id], onDelete: Cascade)
+  secretary_id String
+  secretary    User   @relation(fields: [secretary_id], references: [id])
 
-  secretary_id        String
-  secretary           User     @relation(fields: [secretary_id], references: [id])
-
-  created_at          DateTime @default(now())
+  created_at DateTime @default(now())
 
   @@map("secretary_decisions")
 }
 
-/// Configurable fee rule for automatic payment calculation
 model FeeRule {
-  id            String      @id @default(uuid())
-  request_type  RequestType
-  zone          PropertyZone
-  base_fee      Float       // Fixed base charge (e.g. $10)
-  rate_per_m2   Float       // Per-m² charge (e.g. $0.15)
-  description   String      // Human-readable label for receipts
+  id           String       @id @default(uuid())
+  request_type RequestType
+  zone         PropertyZone
+  base_fee     Float
+  rate_per_m2  Float
+  description  String
 
-  created_at    DateTime    @default(now())
-  updated_at    DateTime    @updatedAt
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 
   @@unique([request_type, zone])
   @@map("fee_rules")

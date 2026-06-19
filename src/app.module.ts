@@ -1,21 +1,26 @@
 /**
  * app.module.ts — Root module of the application.
- * Imports all functional modules of the system.
  */
 
 import { Module } from '@nestjs/common';
 import { PrismaModule } from './prisma/prisma.module';
+import { EmailModule } from './email/email.module';
+import { VerificationModule } from './verification/verification.module';
+import { RolesModule } from './roles/roles.module';
+import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { RequestModule } from './requests/request.module';
-import { UsersModule } from './users/users.module';
 import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
     PrismaModule,
+    EmailModule,
+    VerificationModule,
+    RolesModule,
+    UsersModule,
     AuthModule,
     RequestModule,
-    UsersModule,
     AuditModule,
   ],
 })
