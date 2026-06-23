@@ -90,9 +90,17 @@ export class RequestController {
   }
 
   @Get(':id')
+  @Roles(
+    Role.CITIZEN,
+    Role.USER,
+    Role.SECRETARY,
+    Role.TECHNICIAN,
+    Role.FINANCIAL,
+    Role.ADMINISTRATOR,
+  )
   @ApiOperation({ summary: 'Detalle completo de una solicitud' })
-  async findOne(@Param('id') id: string) {
-    const data = await this.request_service.findOne(id);
+  async findOne(@Param('id') id: string, @CurrentUser() user: any) {
+    const data = await this.request_service.findOne(id, user);
     return { success: true, data };
   }
 
@@ -195,6 +203,14 @@ export class RequestController {
   // ──────────────────────────────────────────────────────────────────────────
 
   @Post(':id/attachments')
+  @Roles(
+    Role.CITIZEN,
+    Role.USER,
+    Role.SECRETARY,
+    Role.TECHNICIAN,
+    Role.FINANCIAL,
+    Role.ADMINISTRATOR,
+  )
   @ApiOperation({
     summary: 'Subir documento al expediente clasificado por carpeta',
     description:
@@ -225,6 +241,14 @@ export class RequestController {
   }
 
   @Get(':id/attachments')
+  @Roles(
+    Role.CITIZEN,
+    Role.USER,
+    Role.SECRETARY,
+    Role.TECHNICIAN,
+    Role.FINANCIAL,
+    Role.ADMINISTRATOR,
+  )
   @ApiOperation({
     summary: 'Listar documentos del expediente',
     description: 'Opcionalmente filtra por carpeta: ?folder=PLANOS',
@@ -236,9 +260,10 @@ export class RequestController {
   })
   async listAttachments(
     @Param('id') id: string,
+    @CurrentUser() user: any,
     @Query('folder') folder?: string,
   ) {
-    const data = await this.request_service.listAttachments(id, folder);
+    const data = await this.request_service.listAttachments(id, folder, user);
     return { success: true, data };
   }
 
