@@ -7,6 +7,8 @@ import {
   Body,
   Param,
   Query,
+  Res,
+  StreamableFile,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -20,7 +22,11 @@ import {
   ApiConsumes,
   ApiBody,
   ApiQuery,
+  ApiProduces,
+  ApiOkResponse,
 } from '@nestjs/swagger';
+import { createReadStream } from 'fs';
+import { Response } from 'express';
 import { RequestService } from './request.service';
 import { CreateRequestDto } from './dto/create-request.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
@@ -265,6 +271,57 @@ export class RequestController {
   ) {
     const data = await this.request_service.listAttachments(id, folder, user);
     return { success: true, data };
+  }
+
+  @Get(':id/attachments/:attachmentId/download')
+  @Roles(
+    Role.CITIZEN,
+    Role.USER,
+    Role.SECRETARY,
+    Role.TECHNICIAN,
+    Role.FINANCIAL,
+    Role.ADMINISTRATOR,
+  )
+  @ApiOperation({ summary: 'Descargar o visualizar un documento del expediente' })
+  @ApiProduces('application/octet-stream')
+  @ApiOkResponse({
+    description: 'Contenido binario del documento.',
+    schema: { type: 'string', format: 'binary' },
+  })
+  async downloadAttachment(
+    @Param('id') id: string,
+    @Param('attachmentId') attachment_id: string,
+    @CurrentUser() user: any,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const file = await this.request_service.downloadAttachment(
+      id,
+      attachment_id,
+      user,
+    );
+    const content_type = file.attachment.type || 'application/octet-stream';
+    const inline_types = new Set([
+      'application/pdf',
+      'image/gif',
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'text/plain',
+    ]);
+    const disposition = inline_types.has(content_type)
+      ? 'inline'
+      : 'attachment';
+    const encoded_name = encodeURIComponent(file.attachment.name);
+
+    response.setHeader('Content-Type', content_type);
+    response.setHeader(
+      'Content-Disposition',
+      `${disposition}; filename*=UTF-8''${encoded_name}`,
+    );
+    response.setHeader('Content-Length', file.file_size.toString());
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+
+    return new StreamableFile(createReadStream(file.file_path));
   }
 
   @Delete(':id/attachments/:attachmentId')

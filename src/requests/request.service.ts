@@ -626,11 +626,13 @@ export class RequestService {
 
     if (!file) throw new BadRequestException('Se requiere un archivo para adjuntar.');
 
+    const hash = createHash('sha256').update(file.buffer).digest('hex');
+
     // Guardar archivo físico
     const folder_path = path.join('./uploads', 'expedientes', id, dto.folder);
     if (!fs.existsSync(folder_path)) fs.mkdirSync(folder_path, { recursive: true });
 
-    const safe_name = `${Date.now()}-${file.originalname.replace(/\s+/g, '_')}`;
+    const safe_name = `${Date.now()}-${path.basename(file.originalname).replace(/\s+/g, '_')}`;
     const file_path = path.join(folder_path, safe_name);
     fs.writeFileSync(file_path, file.buffer);
 
@@ -643,6 +645,7 @@ export class RequestService {
         type: file.mimetype,
         url,
         size: file.size,
+        hash,
         folder: dto.folder,
         request_id: id,
       },
@@ -669,6 +672,59 @@ export class RequestService {
       where,
       orderBy: [{ folder: 'asc' }, { created_at: 'asc' }],
     });
+  }
+
+  /** Resuelve un adjunto autorizado a una ruta física segura para su entrega. */
+  async downloadAttachment(id: string, attachment_id: string, active_user: any) {
+    await this.validateRequestAccess(id, active_user);
+
+    const attachment = await this.prisma.attachment.findFirst({
+      where: { id: attachment_id, request_id: id },
+    });
+    if (!attachment) {
+      throw new NotFoundException('Adjunto no encontrado en este expediente.');
+    }
+
+    const uploads_root = path.resolve(process.cwd(), 'uploads');
+    const relative_url = attachment.url.replace(/^[/\\]+/, '');
+    const resolved_file_path = path.resolve(process.cwd(), relative_url);
+    const relative_path = path.relative(uploads_root, resolved_file_path);
+
+    if (relative_path.startsWith('..') || path.isAbsolute(relative_path)) {
+      throw new ForbiddenException('La ruta del documento no es válida.');
+    }
+
+    if (!fs.existsSync(resolved_file_path)) {
+      throw new NotFoundException('El archivo físico no existe.');
+    }
+
+    let real_uploads_root: string;
+    let real_file_path: string;
+    try {
+      real_uploads_root = fs.realpathSync(uploads_root);
+      real_file_path = fs.realpathSync(resolved_file_path);
+    } catch {
+      throw new NotFoundException('El archivo físico no existe.');
+    }
+
+    const real_relative_path = path.relative(real_uploads_root, real_file_path);
+    if (
+      real_relative_path.startsWith('..') ||
+      path.isAbsolute(real_relative_path)
+    ) {
+      throw new ForbiddenException('La ruta del documento no es válida.');
+    }
+
+    const file_stats = fs.statSync(real_file_path);
+    if (!file_stats.isFile()) {
+      throw new NotFoundException('El archivo físico no existe.');
+    }
+
+    return {
+      attachment,
+      file_path: real_file_path,
+      file_size: file_stats.size,
+    };
   }
 
   /** Elimina un adjunto del expediente (archivo físico + registro en BD). */
