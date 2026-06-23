@@ -30,6 +30,65 @@ export class RequestService {
     private readonly fee_rules_service: FeeRulesService,
   ) {}
 
+  private async validateRequestAccess(
+    request_id: string,
+    active_user: any,
+    options: { allow_delete?: boolean } = {},
+  ) {
+    const request = await this.prisma.request.findUnique({
+      where: { id: request_id },
+      select: {
+        id: true,
+        citizen_id: true,
+        architect_id: true,
+      },
+    });
+
+    if (!request) {
+      throw new NotFoundException('Solicitud no encontrada.');
+    }
+
+    const role = active_user?.role as Role;
+    const is_administrator = role === Role.ADMINISTRATOR;
+    const is_citizen_owner =
+      role === Role.CITIZEN && request.citizen_id === active_user?.id;
+    const is_professional_owner =
+      role === Role.USER && request.architect_id === active_user?.id;
+
+    if (options.allow_delete) {
+      const can_delete =
+        is_administrator || role === Role.SECRETARY || is_professional_owner;
+
+      if (!can_delete) {
+        throw new ForbiddenException(
+          'No tiene permisos para eliminar documentos de este expediente.',
+        );
+      }
+
+      return request;
+    }
+
+    const institutional_roles: Role[] = [
+      Role.SECRETARY,
+      Role.TECHNICIAN,
+      Role.FINANCIAL,
+    ];
+    const is_institutional = institutional_roles.includes(role);
+
+    if (
+      !is_administrator &&
+      !is_institutional &&
+      !is_citizen_owner &&
+      !is_professional_owner
+    ) {
+      throw new ForbiddenException(
+        'No tiene permisos para acceder a este expediente.',
+      );
+    }
+
+    return request;
+  }
+
   // ──────────────────────────────────────────────────────────────────────────
   // PREREQUISITE GUARD
   // Para PLAN_APPROVAL: el ciudadano debe tener una BUILDING_LINE APROBADA.
@@ -195,7 +254,9 @@ export class RequestService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, active_user: any) {
+    await this.validateRequestAccess(id, active_user);
+
     const request = await this.prisma.request.findUnique({
       where: { id },
       include: {
@@ -561,8 +622,7 @@ export class RequestService {
     file: Express.Multer.File,
     active_user: any,
   ) {
-    const request = await this.prisma.request.findUnique({ where: { id } });
-    if (!request) throw new NotFoundException('Solicitud no encontrada.');
+    await this.validateRequestAccess(id, active_user);
 
     if (!file) throw new BadRequestException('Se requiere un archivo para adjuntar.');
 
@@ -599,9 +659,8 @@ export class RequestService {
   }
 
   /** Lista los adjuntos de un expediente, con filtro opcional por carpeta. */
-  async listAttachments(id: string, folder?: string) {
-    const request = await this.prisma.request.findUnique({ where: { id } });
-    if (!request) throw new NotFoundException('Solicitud no encontrada.');
+  async listAttachments(id: string, folder: string | undefined, active_user: any) {
+    await this.validateRequestAccess(id, active_user);
 
     const where: any = { request_id: id };
     if (folder) where.folder = folder;
@@ -614,6 +673,8 @@ export class RequestService {
 
   /** Elimina un adjunto del expediente (archivo físico + registro en BD). */
   async deleteAttachment(id: string, attachment_id: string, active_user: any) {
+    await this.validateRequestAccess(id, active_user, { allow_delete: true });
+
     const attachment = await this.prisma.attachment.findFirst({
       where: { id: attachment_id, request_id: id },
     });
