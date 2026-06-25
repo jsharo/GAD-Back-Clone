@@ -675,6 +675,48 @@ export class RequestService {
   }
 
   /** Resuelve un adjunto autorizado a una ruta física segura para su entrega. */
+  private resolveAttachmentFile(attachment: any) {
+    const uploads_root = path.resolve(process.cwd(), 'uploads');
+    const relative_url = attachment.url.replace(/^[/\\]+/, '');
+    const resolved_file_path = path.resolve(process.cwd(), relative_url);
+    const relative_path = path.relative(uploads_root, resolved_file_path);
+
+    if (relative_path.startsWith('..') || path.isAbsolute(relative_path)) {
+      throw new ForbiddenException('La ruta del documento no es valida.');
+    }
+
+    if (!fs.existsSync(resolved_file_path)) {
+      throw new NotFoundException('El archivo fisico no existe.');
+    }
+
+    let real_uploads_root: string;
+    let real_file_path: string;
+    try {
+      real_uploads_root = fs.realpathSync(uploads_root);
+      real_file_path = fs.realpathSync(resolved_file_path);
+    } catch {
+      throw new NotFoundException('El archivo fisico no existe.');
+    }
+
+    const real_relative_path = path.relative(real_uploads_root, real_file_path);
+    if (
+      real_relative_path.startsWith('..') ||
+      path.isAbsolute(real_relative_path)
+    ) {
+      throw new ForbiddenException('La ruta del documento no es valida.');
+    }
+
+    const file_stats = fs.statSync(real_file_path);
+    if (!file_stats.isFile()) {
+      throw new NotFoundException('El archivo fisico no existe.');
+    }
+
+    return {
+      file_path: real_file_path,
+      file_size: file_stats.size,
+    };
+  }
+
   async downloadAttachment(id: string, attachment_id: string, active_user: any) {
     await this.validateRequestAccess(id, active_user);
 
@@ -728,6 +770,48 @@ export class RequestService {
   }
 
   /** Elimina un adjunto del expediente (archivo físico + registro en BD). */
+  async verifyAttachmentIntegrity(id: string, attachment_id: string, active_user: any) {
+    await this.validateRequestAccess(id, active_user);
+
+    const attachment = await this.prisma.attachment.findFirst({
+      where: { id: attachment_id, request_id: id },
+    });
+    if (!attachment) {
+      throw new NotFoundException('Adjunto no encontrado en este expediente.');
+    }
+
+    const file = this.resolveAttachmentFile(attachment);
+    const current_hash = createHash('sha256')
+      .update(fs.readFileSync(file.file_path))
+      .digest('hex');
+
+    if (!attachment.hash) {
+      return {
+        success: true,
+        valid: false,
+        verifiable: false,
+        attachment_id: attachment.id,
+        stored_hash: null,
+        current_hash,
+        message: 'Attachment does not have a stored hash.',
+      };
+    }
+
+    const valid = attachment.hash === current_hash;
+
+    return {
+      success: true,
+      valid,
+      verifiable: true,
+      attachment_id: attachment.id,
+      stored_hash: attachment.hash,
+      current_hash,
+      message: valid
+        ? 'Attachment integrity is valid.'
+        : 'Attachment integrity violation detected.',
+    };
+  }
+
   async deleteAttachment(id: string, attachment_id: string, active_user: any) {
     await this.validateRequestAccess(id, active_user, { allow_delete: true });
 
