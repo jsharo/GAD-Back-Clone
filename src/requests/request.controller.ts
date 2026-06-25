@@ -324,6 +324,28 @@ export class RequestController {
     return new StreamableFile(createReadStream(file.file_path));
   }
 
+  @Get(':id/attachments/:attachmentId/verify')
+  @Roles(
+    Role.CITIZEN,
+    Role.USER,
+    Role.SECRETARY,
+    Role.TECHNICIAN,
+    Role.FINANCIAL,
+    Role.ADMINISTRATOR,
+  )
+  @ApiOperation({ summary: 'Verificar integridad SHA-256 de un documento del expediente' })
+  async verifyAttachmentIntegrity(
+    @Param('id') id: string,
+    @Param('attachmentId') attachment_id: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.request_service.verifyAttachmentIntegrity(
+      id,
+      attachment_id,
+      user,
+    );
+  }
+
   @Delete(':id/attachments/:attachmentId')
   @Roles(Role.SECRETARY, Role.USER, Role.ADMINISTRATOR)
   @ApiOperation({ summary: 'Eliminar un documento del expediente (archivo físico + registro)' })
