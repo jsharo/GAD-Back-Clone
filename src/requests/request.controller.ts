@@ -346,6 +346,21 @@ export class RequestController {
     );
   }
 
+  @Post(':id/attachments/:attachmentId/ipfs')
+  @Roles(Role.ADMINISTRATOR, Role.SECRETARY)
+  @ApiOperation({ summary: 'Preparar la subida manual de un documento a IPFS' })
+  async uploadAttachmentToIpfs(
+    @Param('id') id: string,
+    @Param('attachmentId') attachment_id: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.request_service.uploadAttachmentToIpfs(
+      id,
+      attachment_id,
+      user,
+    );
+  }
+
   @Delete(':id/attachments/:attachmentId')
   @Roles(Role.SECRETARY, Role.USER, Role.ADMINISTRATOR)
   @ApiOperation({ summary: 'Eliminar un documento del expediente (archivo físico + registro)' })

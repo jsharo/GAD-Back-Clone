@@ -21,6 +21,7 @@ import { UploadAttachmentDto } from './dto/upload-attachment.dto';
 import { RequestStatus } from '../common/enums/request-status.enum';
 import { Role } from '../common/enums/role.enum';
 import { PropertyZone, RequestType } from '@prisma/client';
+import { IpfsService } from '../ipfs/ipfs.service';
 
 @Injectable()
 export class RequestService {
@@ -28,6 +29,7 @@ export class RequestService {
     private readonly prisma: PrismaService,
     private readonly audit_service: AuditService,
     private readonly fee_rules_service: FeeRulesService,
+    private readonly ipfs_service: IpfsService,
   ) {}
 
   private async validateRequestAccess(
@@ -810,6 +812,35 @@ export class RequestService {
         ? 'Attachment integrity is valid.'
         : 'Attachment integrity violation detected.',
     };
+  }
+
+  async uploadAttachmentToIpfs(
+    id: string,
+    attachment_id: string,
+    active_user: any,
+  ) {
+    await this.validateRequestAccess(id, active_user);
+
+    const attachment = await this.prisma.attachment.findFirst({
+      where: { id: attachment_id, request_id: id },
+    });
+    if (!attachment) {
+      throw new NotFoundException('Adjunto no encontrado en este expediente.');
+    }
+
+    const file = this.resolveAttachmentFile(attachment);
+
+    if (!this.ipfs_service.isEnabled()) {
+      return {
+        success: true,
+        enabled: false,
+        uploaded: false,
+        ipfs_status: 'DISABLED',
+        message: 'IPFS integration is disabled by configuration.',
+      };
+    }
+
+    return this.ipfs_service.uploadFile(file.file_path);
   }
 
   async deleteAttachment(id: string, attachment_id: string, active_user: any) {

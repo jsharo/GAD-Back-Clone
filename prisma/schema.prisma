@@ -226,6 +226,10 @@ model Attachment {
   size       Int?
   hash       String?
   folder     String  @default("OTROS")
+  ipfs_cid         String?
+  ipfs_status      String?   @default("PENDING")
+  ipfs_uploaded_at DateTime?
+  ipfs_provider    String?
 
   request_id String
   request    Request @relation(fields: [request_id], references: [id], onDelete: Cascade)
