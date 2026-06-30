@@ -4,6 +4,7 @@ import {
   BadRequestException,
   UnprocessableEntityException,
   ForbiddenException,
+  ConflictException,
 } from '@nestjs/common';
 import { createHash } from 'crypto';
 import * as fs from 'fs';
@@ -840,7 +841,109 @@ export class RequestService {
       };
     }
 
-    return this.ipfs_service.uploadFile(file.file_path);
+    if (attachment.ipfs_cid) {
+      return {
+        success: true,
+        enabled: true,
+        uploaded: false,
+        already_uploaded: true,
+        attachment_id: attachment.id,
+        ipfs_cid: attachment.ipfs_cid,
+        ipfs_status: 'UPLOADED',
+        ipfs_provider: attachment.ipfs_provider,
+        ipfs_uploaded_at: attachment.ipfs_uploaded_at,
+        message: 'Attachment is already uploaded to IPFS.',
+      };
+    }
+
+    const provider = this.ipfs_service.getProvider();
+    const claimed = await this.prisma.attachment.updateMany({
+      where: {
+        id: attachment.id,
+        request_id: id,
+        ipfs_cid: null,
+        OR: [
+          { ipfs_status: null },
+          { ipfs_status: 'PENDING' },
+          { ipfs_status: 'FAILED' },
+        ],
+      },
+      data: {
+        ipfs_status: 'UPLOADING',
+        ipfs_provider: provider,
+      },
+    });
+
+    if (claimed.count === 0) {
+      throw new ConflictException(
+        'Attachment IPFS upload is already in progress or is not eligible for retry.',
+      );
+    }
+
+    try {
+      const upload = await this.ipfs_service.uploadFile(file.file_path);
+      const uploaded_at = new Date();
+      const updated_attachment = await this.prisma.attachment.update({
+        where: { id: attachment.id },
+        data: {
+          ipfs_cid: upload.cid,
+          ipfs_status: 'UPLOADED',
+          ipfs_uploaded_at: uploaded_at,
+          ipfs_provider: upload.provider,
+        },
+      });
+
+      await this.audit_service.logAction(
+        active_user.id,
+        active_user.email,
+        'IPFS_UPLOAD_SUCCESS',
+        JSON.stringify({
+          requestId: id,
+          attachmentId: attachment.id,
+          hash: attachment.hash,
+          cid: upload.cid,
+          provider: upload.provider,
+          status: 'UPLOADED',
+        }),
+      );
+
+      return {
+        success: true,
+        enabled: true,
+        uploaded: true,
+        already_uploaded: false,
+        attachment_id: updated_attachment.id,
+        ipfs_cid: updated_attachment.ipfs_cid,
+        ipfs_status: updated_attachment.ipfs_status,
+        ipfs_provider: updated_attachment.ipfs_provider,
+        ipfs_uploaded_at: updated_attachment.ipfs_uploaded_at,
+        message: 'Attachment uploaded to IPFS successfully.',
+      };
+    } catch (error) {
+      await this.prisma.attachment.update({
+        where: { id: attachment.id },
+        data: {
+          ipfs_status: 'FAILED',
+          ipfs_provider: provider,
+        },
+      });
+
+      await this.audit_service.logAction(
+        active_user.id,
+        active_user.email,
+        'IPFS_UPLOAD_FAILED',
+        JSON.stringify({
+          requestId: id,
+          attachmentId: attachment.id,
+          hash: attachment.hash,
+          cid: null,
+          provider,
+          status: 'FAILED',
+        }),
+      );
+
+      throw error;
+    }
   }
 
   async deleteAttachment(id: string, attachment_id: string, active_user: any) {

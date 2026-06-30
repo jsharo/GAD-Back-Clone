@@ -348,7 +348,7 @@ export class RequestController {
 
   @Post(':id/attachments/:attachmentId/ipfs')
   @Roles(Role.ADMINISTRATOR, Role.SECRETARY)
-  @ApiOperation({ summary: 'Preparar la subida manual de un documento a IPFS' })
+  @ApiOperation({ summary: 'Subir manualmente un documento a IPFS' })
   async uploadAttachmentToIpfs(
     @Param('id') id: string,
     @Param('attachmentId') attachment_id: string,
