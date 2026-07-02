@@ -361,6 +361,21 @@ export class RequestController {
     );
   }
 
+  @Post(':id/attachments/:attachmentId/blockchain')
+  @Roles(Role.ADMINISTRATOR, Role.SECRETARY)
+  @ApiOperation({ summary: 'Anclar evidencia documental en blockchain' })
+  async anchorAttachmentEvidence(
+    @Param('id') id: string,
+    @Param('attachmentId') attachment_id: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.request_service.anchorAttachmentEvidence(
+      id,
+      attachment_id,
+      user,
+    );
+  }
+
   @Delete(':id/attachments/:attachmentId')
   @Roles(Role.SECRETARY, Role.USER, Role.ADMINISTRATOR)
   @ApiOperation({ summary: 'Eliminar un documento del expediente (archivo físico + registro)' })

@@ -9,6 +9,14 @@ dist/
 prisma/*.db
 prisma/*.db-journal
 
+# Hardhat
+artifacts/
+cache/
+typechain-types/
+typechain/
+coverage/
+coverage.json
+
 # Archivos subidos
 uploads/
 
