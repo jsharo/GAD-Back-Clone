@@ -23,6 +23,7 @@ import { RequestStatus } from '../common/enums/request-status.enum';
 import { Role } from '../common/enums/role.enum';
 import { PropertyZone, RequestType } from '@prisma/client';
 import { IpfsService } from '../ipfs/ipfs.service';
+import { BlockchainService } from '../blockchain/blockchain.service';
 
 @Injectable()
 export class RequestService {
@@ -31,6 +32,7 @@ export class RequestService {
     private readonly audit_service: AuditService,
     private readonly fee_rules_service: FeeRulesService,
     private readonly ipfs_service: IpfsService,
+    private readonly blockchain_service: BlockchainService,
   ) {}
 
   private async validateRequestAccess(
@@ -938,6 +940,181 @@ export class RequestService {
           hash: attachment.hash,
           cid: null,
           provider,
+          status: 'FAILED',
+        }),
+      );
+
+      throw error;
+    }
+  }
+
+  async anchorAttachmentEvidence(
+    id: string,
+    attachment_id: string,
+    active_user: any,
+  ) {
+    await this.validateRequestAccess(id, active_user);
+
+    const attachment = await this.prisma.attachment.findFirst({
+      where: { id: attachment_id, request_id: id },
+    });
+    if (!attachment) {
+      throw new NotFoundException('Adjunto no encontrado en este expediente.');
+    }
+    if (!attachment.hash) {
+      throw new BadRequestException(
+        'El adjunto no tiene un hash SHA-256 verificable.',
+      );
+    }
+    if (!attachment.ipfs_cid) {
+      throw new BadRequestException(
+        'El adjunto debe subirse a IPFS antes de anclarlo en blockchain.',
+      );
+    }
+
+    if (!this.blockchain_service.isEnabled()) {
+      return {
+        success: true,
+        enabled: false,
+        anchored: false,
+        blockchain_status: 'DISABLED',
+        message: 'Blockchain integration is disabled by configuration.',
+      };
+    }
+
+    if (
+      attachment.blockchain_status === 'ANCHORED' &&
+      attachment.blockchain_tx_hash
+    ) {
+      return {
+        success: true,
+        enabled: true,
+        anchored: false,
+        already_anchored: true,
+        attachment_id: attachment.id,
+        blockchain_status: attachment.blockchain_status,
+        blockchain_tx_hash: attachment.blockchain_tx_hash,
+        blockchain_anchored_at: attachment.blockchain_anchored_at,
+        blockchain_network: attachment.blockchain_network,
+        blockchain_contract_address:
+          attachment.blockchain_contract_address,
+        blockchain_evidence_id: attachment.blockchain_evidence_id,
+        message: 'Attachment evidence is already anchored in blockchain.',
+      };
+    }
+
+    const evidence = {
+      requestId: id,
+      attachmentId: attachment.id,
+      sha256Hash: attachment.hash,
+      ipfsCid: attachment.ipfs_cid,
+      actor: active_user.id,
+    };
+    const evidence_id = this.blockchain_service.buildEvidenceId(evidence);
+    const network = this.blockchain_service.getNetworkName();
+    const claimed = await this.prisma.attachment.updateMany({
+      where: {
+        id: attachment.id,
+        request_id: id,
+        blockchain_tx_hash: null,
+        OR: [
+          { blockchain_status: null },
+          { blockchain_status: 'PENDING' },
+          { blockchain_status: 'FAILED' },
+        ],
+      },
+      data: {
+        blockchain_status: 'ANCHORING',
+        blockchain_network: network,
+        blockchain_evidence_id: evidence_id,
+      },
+    });
+
+    if (claimed.count === 0) {
+      throw new ConflictException(
+        'Attachment blockchain anchoring is already in progress or is not eligible for retry.',
+      );
+    }
+
+    let anchor_result: Awaited<
+      ReturnType<BlockchainService['anchorDocumentEvidence']>
+    > | null = null;
+
+    try {
+      anchor_result =
+        await this.blockchain_service.anchorDocumentEvidence(evidence);
+      const anchored_at = new Date();
+      const updated_attachment = await this.prisma.attachment.update({
+        where: { id: attachment.id },
+        data: {
+          blockchain_status: 'ANCHORED',
+          blockchain_tx_hash: anchor_result.txHash,
+          blockchain_anchored_at: anchored_at,
+          blockchain_network: anchor_result.network,
+          blockchain_contract_address: anchor_result.contractAddress,
+          blockchain_evidence_id: anchor_result.evidenceId,
+        },
+      });
+
+      await this.audit_service.logAction(
+        active_user.id,
+        active_user.email,
+        'BLOCKCHAIN_ANCHOR_SUCCESS',
+        JSON.stringify({
+          requestId: id,
+          attachmentId: attachment.id,
+          sha256Hash: attachment.hash,
+          ipfsCid: attachment.ipfs_cid,
+          txHash: anchor_result.txHash,
+          evidenceId: anchor_result.evidenceId,
+          network: anchor_result.network,
+          status: 'ANCHORED',
+        }),
+      );
+
+      return {
+        success: true,
+        enabled: true,
+        anchored: true,
+        already_anchored: false,
+        attachment_id: updated_attachment.id,
+        blockchain_status: updated_attachment.blockchain_status,
+        blockchain_tx_hash: updated_attachment.blockchain_tx_hash,
+        blockchain_anchored_at:
+          updated_attachment.blockchain_anchored_at,
+        blockchain_network: updated_attachment.blockchain_network,
+        blockchain_contract_address:
+          updated_attachment.blockchain_contract_address,
+        blockchain_evidence_id:
+          updated_attachment.blockchain_evidence_id,
+        block_number: anchor_result.blockNumber,
+        message: 'Attachment evidence anchored in blockchain successfully.',
+      };
+    } catch (error) {
+      await this.prisma.attachment.update({
+        where: { id: attachment.id },
+        data: {
+          blockchain_status: 'FAILED',
+          blockchain_tx_hash: anchor_result?.txHash,
+          blockchain_anchored_at: anchor_result ? new Date() : undefined,
+          blockchain_network: anchor_result?.network ?? network,
+          blockchain_contract_address: anchor_result?.contractAddress,
+          blockchain_evidence_id: anchor_result?.evidenceId ?? evidence_id,
+        },
+      });
+
+      await this.audit_service.logAction(
+        active_user.id,
+        active_user.email,
+        'BLOCKCHAIN_ANCHOR_FAILED',
+        JSON.stringify({
+          requestId: id,
+          attachmentId: attachment.id,
+          sha256Hash: attachment.hash,
+          ipfsCid: attachment.ipfs_cid,
+          txHash: anchor_result?.txHash ?? null,
+          evidenceId: anchor_result?.evidenceId ?? evidence_id,
+          network: anchor_result?.network ?? network,
           status: 'FAILED',
         }),
       );

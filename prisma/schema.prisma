@@ -230,6 +230,12 @@ model Attachment {
   ipfs_status      String?   @default("PENDING")
   ipfs_uploaded_at DateTime?
   ipfs_provider    String?
+  blockchain_status           String?   @default("PENDING")
+  blockchain_tx_hash          String?
+  blockchain_anchored_at      DateTime?
+  blockchain_network          String?
+  blockchain_contract_address String?
+  blockchain_evidence_id      String?
 
   request_id String
   request    Request @relation(fields: [request_id], references: [id], onDelete: Cascade)
