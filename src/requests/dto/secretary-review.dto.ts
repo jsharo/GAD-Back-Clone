@@ -4,22 +4,22 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 /**
  * SecretaryReviewDto — Cuerpo de la decisión de la secretaría sobre un trámite.
  *
- * Flujo:
- *  - signature_validated=false  → Error 422: no se puede avanzar sin firma válida del profesional.
+ * Flujo (actualizado — verificación NO bloqueante):
+ *  - signature_validated=false  → Alerta informativa en historial (NO bloquea el avance).
  *  - approved=false             → Estado OBSERVED; el expediente regresa al ciudadano/profesional.
- *  - approved=true + sig OK     → Estado PENDING_TECHNICIAN.
+ *  - approved=true              → Estado PENDING_TECHNICIAN (con o sin firma validada).
  */
 export class SecretaryReviewDto {
   /**
    * Indica que la secretaria verificó manualmente que el PDF del profesional
    * habilitado contiene una firma digital válida.
-   * Si es `false` la solicitud se rechaza con HTTP 422.
+   * Si es `false`, el sistema registra una alerta informativa pero permite continuar.
    */
   @ApiProperty({
     example: true,
     description:
       'Resultado de la verificación manual de la firma digital del profesional en el PDF adjunto. ' +
-      'Debe ser true para que el expediente pueda avanzar.',
+      'Si es false, se genera una alerta informativa en el historial pero el expediente puede avanzar.',
   })
   @IsBoolean()
   signature_validated: boolean;
