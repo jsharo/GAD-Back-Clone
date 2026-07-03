@@ -11,7 +11,33 @@ export class RolesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findAllRoles() {
-    return this.prisma.role.findMany({ orderBy: { name: 'asc' } });
+    return this.prisma.role.findMany({
+      orderBy: { name: 'asc' },
+      include: {
+        permissions: {
+          include: { permission: true },
+        },
+        _count: { select: { users: true } },
+      },
+    });
+  }
+
+  async findRoleById(id: string) {
+    const role = await this.prisma.role.findUnique({
+      where: { id },
+      include: {
+        permissions: {
+          include: { permission: true },
+        },
+        _count: { select: { users: true } },
+      },
+    });
+
+    if (!role) {
+      throw new NotFoundException(`Role "${id}" not found.`);
+    }
+
+    return role;
   }
 
   async findRoleByName(name: string) {
@@ -63,6 +89,38 @@ export class RolesService {
     return this.prisma.permission.delete({ where: { id } });
   }
 
+  async syncRolePermissions(roleId: string, permissionIds: string[]) {
+    await this.findRoleById(roleId);
+
+    const uniquePermissionIds = [...new Set(permissionIds)];
+
+    if (uniquePermissionIds.length > 0) {
+      const permissions = await this.prisma.permission.findMany({
+        where: { id: { in: uniquePermissionIds } },
+        select: { id: true },
+      });
+
+      if (permissions.length !== uniquePermissionIds.length) {
+        throw new BadRequestException('One or more permissions were not found.');
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.rolePermission.deleteMany({ where: { roleId } });
+
+      if (uniquePermissionIds.length > 0) {
+        await tx.rolePermission.createMany({
+          data: uniquePermissionIds.map((permissionId) => ({
+            roleId,
+            permissionId,
+          })),
+        });
+      }
+    });
+
+    return this.findRoleById(roleId);
+  }
+
   async assignRole(userId: string, roleName: string, assignedById: string) {
     const role = await this.findRoleByName(roleName);
     if (!role) {
@@ -84,6 +142,8 @@ export class RolesService {
         },
       });
     });
+
+    await this.removeDirectPermissionsCoveredByRole(userId);
 
     return role;
   }
@@ -119,5 +179,113 @@ export class RolesService {
     ]);
 
     return [...permissionNames].sort();
+  }
+
+  async getUserDirectPermissionIds(userId: string): Promise<string[]> {
+    await this.ensureUserExists(userId);
+
+    const entries = await this.prisma.userPermission.findMany({
+      where: { userId },
+      select: { permissionId: true },
+      orderBy: { permissionId: 'asc' },
+    });
+
+    return entries.map((entry) => entry.permissionId);
+  }
+
+  async getUserPermissionBreakdown(userId: string) {
+    await this.ensureUserExists(userId);
+
+    const [roleName, rolePermissionIds, storedDirectIds] = await Promise.all([
+      this.getUserRoleName(userId),
+      this.getRolePermissionIdsForUser(userId),
+      this.getUserDirectPermissionIds(userId),
+    ]);
+
+    const roleSet = new Set(rolePermissionIds);
+    const directPermissionIds = storedDirectIds.filter((id) => !roleSet.has(id));
+    const effectivePermissionIds = [...new Set([...rolePermissionIds, ...directPermissionIds])].sort();
+
+    return {
+      roleName,
+      rolePermissionIds,
+      directPermissionIds,
+      effectivePermissionIds,
+    };
+  }
+
+  async syncUserPermissions(userId: string, permissionIds: string[]) {
+    await this.ensureUserExists(userId);
+
+    const rolePermissionIds = await this.getRolePermissionIdsForUser(userId);
+    const roleSet = new Set(rolePermissionIds);
+    const uniqueRequested = [...new Set(permissionIds)];
+    const ignoredBecauseInRole = uniqueRequested.filter((id) => roleSet.has(id));
+    const directOnly = uniqueRequested.filter((id) => !roleSet.has(id));
+
+    if (directOnly.length > 0) {
+      const permissions = await this.prisma.permission.findMany({
+        where: { id: { in: directOnly } },
+        select: { id: true },
+      });
+
+      if (permissions.length !== directOnly.length) {
+        throw new BadRequestException('One or more permissions were not found.');
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.userPermission.deleteMany({ where: { userId } });
+
+      if (directOnly.length > 0) {
+        await tx.userPermission.createMany({
+          data: directOnly.map((permissionId) => ({
+            userId,
+            permissionId,
+          })),
+        });
+      }
+    });
+
+    return {
+      directPermissionIds: await this.getUserDirectPermissionIds(userId),
+      ignoredBecauseInRole,
+    };
+  }
+
+  private async getRolePermissionIdsForUser(userId: string): Promise<string[]> {
+    const entries = await this.prisma.rolePermission.findMany({
+      where: {
+        role: {
+          users: { some: { userId } },
+        },
+      },
+      select: { permissionId: true },
+    });
+
+    return entries.map((entry) => entry.permissionId);
+  }
+
+  private async removeDirectPermissionsCoveredByRole(userId: string) {
+    const rolePermissionIds = await this.getRolePermissionIdsForUser(userId);
+    if (rolePermissionIds.length === 0) return;
+
+    await this.prisma.userPermission.deleteMany({
+      where: {
+        userId,
+        permissionId: { in: rolePermissionIds },
+      },
+    });
+  }
+
+  private async ensureUserExists(userId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User "${userId}" not found.`);
+    }
   }
 }

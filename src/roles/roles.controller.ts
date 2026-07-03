@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Patch,
   Delete,
   Body,
@@ -14,6 +15,7 @@ import {
   AssignRoleDto,
   CreatePermissionDto,
   CreateRoleDto,
+  SyncRolePermissionsDto,
   UpdatePermissionDto,
   UpdateRoleDto,
 } from './dto/roles.dto';
@@ -29,34 +31,6 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 @Controller('roles')
 export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
-
-  @Get()
-  @Roles(Role.ADMINISTRATOR)
-  @ApiOperation({ summary: 'List all roles' })
-  findAllRoles() {
-    return this.rolesService.findAllRoles();
-  }
-
-  @Post()
-  @Roles(Role.ADMINISTRATOR)
-  @ApiOperation({ summary: 'Create role' })
-  createRole(@Body() dto: CreateRoleDto) {
-    return this.rolesService.createRole(dto.name, dto.description);
-  }
-
-  @Patch(':id')
-  @Roles(Role.ADMINISTRATOR)
-  @ApiOperation({ summary: 'Update role' })
-  updateRole(@Param('id') id: string, @Body() dto: UpdateRoleDto) {
-    return this.rolesService.updateRole(id, dto);
-  }
-
-  @Delete(':id')
-  @Roles(Role.ADMINISTRATOR)
-  @ApiOperation({ summary: 'Delete role' })
-  deleteRole(@Param('id') id: string) {
-    return this.rolesService.deleteRole(id);
-  }
 
   @Get('permissions')
   @Roles(Role.ADMINISTRATOR)
@@ -93,10 +67,73 @@ export class RolesController {
     return this.rolesService.assignRole(dto.userId, dto.roleName, actor.id);
   }
 
+  @Get('users/:userId/permissions/breakdown')
+  @Roles(Role.ADMINISTRATOR)
+  @ApiOperation({ summary: 'Get role vs direct permission breakdown for a user' })
+  getUserPermissionBreakdown(@Param('userId') userId: string) {
+    return this.rolesService.getUserPermissionBreakdown(userId);
+  }
+
+  @Get('users/:userId/permissions/direct')
+  @Roles(Role.ADMINISTRATOR)
+  @ApiOperation({ summary: 'Get permissions directly assigned to a user' })
+  getUserDirectPermissions(@Param('userId') userId: string) {
+    return this.rolesService.getUserDirectPermissionIds(userId);
+  }
+
+  @Put('users/:userId/permissions')
+  @Roles(Role.ADMINISTRATOR)
+  @ApiOperation({ summary: 'Replace permissions directly assigned to a user' })
+  syncUserPermissions(@Param('userId') userId: string, @Body() dto: SyncRolePermissionsDto) {
+    return this.rolesService.syncUserPermissions(userId, dto.permissionIds);
+  }
+
   @Get('users/:userId/permissions')
   @Roles(Role.ADMINISTRATOR, Role.SECRETARY)
   @ApiOperation({ summary: 'Get effective permissions for a user' })
   getEffectivePermissions(@Param('userId') userId: string) {
     return this.rolesService.getEffectivePermissions(userId);
+  }
+
+  @Get()
+  @Roles(Role.ADMINISTRATOR)
+  @ApiOperation({ summary: 'List all roles' })
+  findAllRoles() {
+    return this.rolesService.findAllRoles();
+  }
+
+  @Post()
+  @Roles(Role.ADMINISTRATOR)
+  @ApiOperation({ summary: 'Create role' })
+  createRole(@Body() dto: CreateRoleDto) {
+    return this.rolesService.createRole(dto.name, dto.description);
+  }
+
+  @Get(':id')
+  @Roles(Role.ADMINISTRATOR)
+  @ApiOperation({ summary: 'Get role by id with permissions' })
+  findRoleById(@Param('id') id: string) {
+    return this.rolesService.findRoleById(id);
+  }
+
+  @Patch(':id')
+  @Roles(Role.ADMINISTRATOR)
+  @ApiOperation({ summary: 'Update role' })
+  updateRole(@Param('id') id: string, @Body() dto: UpdateRoleDto) {
+    return this.rolesService.updateRole(id, dto);
+  }
+
+  @Put(':id/permissions')
+  @Roles(Role.ADMINISTRATOR)
+  @ApiOperation({ summary: 'Replace permissions assigned to a role' })
+  syncRolePermissions(@Param('id') id: string, @Body() dto: SyncRolePermissionsDto) {
+    return this.rolesService.syncRolePermissions(id, dto.permissionIds);
+  }
+
+  @Delete(':id')
+  @Roles(Role.ADMINISTRATOR)
+  @ApiOperation({ summary: 'Delete role' })
+  deleteRole(@Param('id') id: string) {
+    return this.rolesService.deleteRole(id);
   }
 }
