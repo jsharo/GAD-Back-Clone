@@ -8,8 +8,10 @@ import { UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { RolesService } from '../roles/roles.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { Role } from '../common/enums/role.enum';
 import { USER_PUBLIC_SELECT } from './constants/user.select';
 
 const PASSWORD_SALT_ROUNDS = 12;
@@ -19,7 +21,35 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly rolesService: RolesService,
   ) {}
+
+  async presentUser<T extends { id: string }>(user: T) {
+    const role = await this.rolesService.getUserRoleName(user.id);
+    return { ...user, role };
+  }
+
+  async findAllForAdmin(roleName?: string, limit = 100) {
+    const where: {
+      deletedAt: null;
+      roleAssignments?: { some: { role: { name: string } } };
+    } = { deletedAt: null };
+
+    if (roleName) {
+      where.roleAssignments = {
+        some: { role: { name: roleName } },
+      };
+    }
+
+    const users = await this.prisma.user.findMany({
+      where,
+      select: USER_PUBLIC_SELECT,
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+
+    return Promise.all(users.map((user) => this.presentUser(user)));
+  }
 
   async validateCredentials(email: string, password: string) {
     const user = await this.prisma.user.findFirst({
@@ -79,6 +109,23 @@ export class UsersService {
     });
   }
 
+  async getDashboardStats() {
+    const activeTechnicianFilter = {
+      deletedAt: null,
+      status: UserStatus.ACTIVE,
+      roleAssignments: {
+        some: { role: { name: Role.TECHNICIAN } },
+      },
+    } as const;
+
+    const [totalUsers, activeTechnicians] = await Promise.all([
+      this.prisma.user.count({ where: { deletedAt: null } }),
+      this.prisma.user.count({ where: activeTechnicianFilter }),
+    ]);
+
+    return { totalUsers, activeTechnicians };
+  }
+
   private async assertUniqueEmail(email: string) {
     const existingEmail = await this.prisma.user.findUnique({ where: { email } });
 
@@ -131,9 +178,22 @@ export class UsersService {
       await this.assertUniqueCedula(dto.cedula, id);
     }
 
+    const { password, ...profileFields } = dto;
+    const data: {
+      name?: string;
+      lastname?: string;
+      direction?: string;
+      cedula?: string;
+      password?: string;
+    } = { ...profileFields };
+
+    if (password) {
+      data.password = await bcrypt.hash(password, PASSWORD_SALT_ROUNDS);
+    }
+
     const user = await this.prisma.user.update({
       where: { id },
-      data: dto,
+      data,
       select: USER_PUBLIC_SELECT,
     });
 
@@ -144,7 +204,7 @@ export class UsersService {
       `User ${user.email} updated`,
     );
 
-    return user;
+    return this.presentUser(user);
   }
 
   async setStatus(
@@ -167,7 +227,7 @@ export class UsersService {
       `User ${user.email} status changed to ${status}`,
     );
 
-    return user;
+    return this.presentUser(user);
   }
 
   async softDelete(id: string, actor: { id: string; email: string }) {
