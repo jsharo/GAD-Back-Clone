@@ -21,6 +21,10 @@ export class AuthService {
       loginDto.password,
     );
 
+    if (!user.emailVerified) {
+      throw new UnauthorizedException('Email not verified');
+    }
+
     const role = await this.rolesService.getUserRoleName(user.id);
     if (!role) {
       throw new UnauthorizedException('User has no assigned role');
@@ -53,6 +57,10 @@ export class AuthService {
 
     if (!user || user.status !== UserStatus.ACTIVE) {
       throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (!user.emailVerified) {
+      throw new UnauthorizedException('Email not verified');
     }
 
     const storedToken = await this.tokensService.validateRefreshToken(

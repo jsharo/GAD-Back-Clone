@@ -29,6 +29,7 @@ export class UsersService {
         email: true,
         password: true,
         status: true,
+        emailVerified: true,
       },
     });
 
@@ -41,7 +42,11 @@ export class UsersService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    return { id: user.id, email: user.email };
+    return {
+      id: user.id,
+      email: user.email,
+      emailVerified: user.emailVerified,
+    };
   }
 
   async findById(id: string) {
