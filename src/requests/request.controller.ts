@@ -116,11 +116,11 @@ export class RequestController {
   @Post(':id/secretary-review')
   @Roles(Role.SECRETARY, Role.ADMINISTRATOR)
   @ApiOperation({
-    summary: 'Revisión de la secretaría: validar firma del PDF y aprobar/observar el expediente',
+    summary: 'Revisión de la secretaría: registrar firma y aprobar/observar el expediente',
     description:
       'La secretaria verifica manualmente la firma digital del profesional en el PDF adjunto. ' +
-      'Si la firma no está validada (signature_validated=false), la aprobación es bloqueada con HTTP 422. ' +
-      'Si aprueba (approved=true + firma OK) → estado PENDING_TECHNICIAN. ' +
+      'Si la firma no está validada (signature_validated=false), el sistema registra una alerta informativa y permite continuar. ' +
+      'Si aprueba (approved=true) → estado PENDING_TECHNICIAN. ' +
       'Si observa (approved=false) → estado OBSERVED, el expediente regresa al profesional/ciudadano.',
   })
   async secretaryReview(
@@ -221,7 +221,8 @@ export class RequestController {
     summary: 'Subir documento al expediente clasificado por carpeta',
     description:
       'Adjunta un archivo al expediente en la carpeta indicada: ' +
-      'PLANOS, DOCUMENTOS_LEGALES, INFORMES u OTROS.',
+      'PLANOS, DOCUMENTOS_LEGALES, INFORMES u OTROS. ' +
+      'El sistema calcula y almacena el hash SHA-256; si reemplaza un documento del mismo nombre/carpeta con hash distinto, registra una alerta informativa.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({

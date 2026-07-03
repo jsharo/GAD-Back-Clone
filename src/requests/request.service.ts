@@ -2,7 +2,6 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
-  UnprocessableEntityException,
   ForbiddenException,
   ConflictException,
 } from '@nestjs/common';
@@ -44,6 +43,7 @@ export class RequestService {
       where: { id: request_id },
       select: {
         id: true,
+        status: true,
         citizen_id: true,
         architect_id: true,
       },
@@ -334,13 +334,21 @@ export class RequestService {
       );
     }
 
-    // ── Guardia de firma ───────────────────────────────────────────────────
-    // La firma del PDF del profesional DEBE ser validada antes de aprobar.
+    // ── Alerta de firma (NO bloqueante) ─────────────────────────────────────
+    // Si la firma no fue validada, se registra una alerta informativa
+    // pero el flujo continúa normalmente.
     if (review_dto.approved && !review_dto.signature_validated) {
-      throw new UnprocessableEntityException(
-        'No se puede aprobar el expediente sin validar previamente la firma digital del profesional en el PDF adjunto. ' +
-        'Por favor, verifique la firma y reintente con signature_validated = true.',
-      );
+      await this.prisma.requestHistory.create({
+        data: {
+          previous_status: request.status,
+          new_status: request.status,
+          comment:
+            'ALERTA: La secretaria aprobó el expediente SIN validar la firma digital del profesional. ' +
+            'Se recomienda verificar la autenticidad del documento.',
+          responsible: 'SISTEMA',
+          request_id: id,
+        },
+      });
     }
 
     // ── Determinar nuevo estado ────────────────────────────────────────────
@@ -355,7 +363,9 @@ export class RequestService {
     } else {
       new_status = RequestStatus.PENDING_TECHNICIAN;
       history_comment =
-        `Firma validada y expediente aprobado por la secretaría. ` +
+        (review_dto.signature_validated
+          ? `Firma validada y expediente aprobado por la secretaría. `
+          : `Expediente aprobado por la secretaría con firma no validada; se registró alerta informativa. `) +
         `Se remite a revisión técnica. ` +
         (review_dto.remarks ? review_dto.remarks : '');
     }
@@ -620,18 +630,61 @@ export class RequestService {
   // ATTACHMENT — Sistema de archivos por carpetas del expediente
   // ──────────────────────────────────────────────────────────────────────────
 
-  /** Sube un documento al expediente, clasificándolo en la carpeta indicada. */
+  /** Sube un documento al expediente, clasificándolo en la carpeta indicada.
+   *  Incluye verificación no-bloqueante de hash: si se reemplaza un documento
+   *  (mismo nombre o carpeta) y el hash SHA-256 cambió, genera una alerta
+   *  en el historial para la secretaría. */
   async uploadAttachment(
     id: string,
     dto: UploadAttachmentDto,
     file: Express.Multer.File,
     active_user: any,
   ) {
-    await this.validateRequestAccess(id, active_user);
+    const access_context = await this.validateRequestAccess(id, active_user);
 
     if (!file) throw new BadRequestException('Se requiere un archivo para adjuntar.');
 
     const hash = createHash('sha256').update(file.buffer).digest('hex');
+
+    // ── Detección de cambio de hash (NO bloqueante) ─────────────────────────
+    const doc_name = dto.name || file.originalname;
+    const previous_attachment = await this.prisma.attachment.findFirst({
+      where: {
+        request_id: id,
+        folder: dto.folder,
+        name: doc_name,
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    if (
+      previous_attachment?.hash &&
+      previous_attachment.hash !== hash
+    ) {
+      // Registrar alerta en el historial del trámite
+      await this.prisma.requestHistory.create({
+        data: {
+          previous_status: access_context.status,
+          new_status: access_context.status,
+          comment:
+            `ALERTA DE INTEGRIDAD: El documento "${doc_name}" en carpeta ${dto.folder} ` +
+            `fue reemplazado y su hash SHA-256 cambió. ` +
+            `Hash anterior: ${previous_attachment.hash.substring(0, 16)}... → ` +
+            `Hash nuevo: ${hash.substring(0, 16)}... ` +
+            `Subido por: ${active_user.email}`,
+          responsible: 'SISTEMA',
+          request_id: id,
+        },
+      });
+
+      await this.audit_service.logAction(
+        active_user.id,
+        active_user.email,
+        'HASH_CHANGE_ALERT',
+        `Hash de firma cambió en doc "${doc_name}" del expediente ${id}. ` +
+        `Anterior: ${previous_attachment.hash.substring(0, 16)}... → Nuevo: ${hash.substring(0, 16)}...`,
+      );
+    }
 
     // Guardar archivo físico
     const folder_path = path.join('./uploads', 'expedientes', id, dto.folder);
@@ -646,7 +699,7 @@ export class RequestService {
     // Crear registro en BD
     const attachment = await this.prisma.attachment.create({
       data: {
-        name: dto.name || file.originalname,
+        name: doc_name,
         type: file.mimetype,
         url,
         size: file.size,
@@ -660,7 +713,7 @@ export class RequestService {
       active_user.id,
       active_user.email,
       'UPLOAD_ATTACHMENT',
-      `Documento "${attachment.name}" cargado en carpeta ${dto.folder} del expediente ${id}`,
+      `Documento "${attachment.name}" cargado en carpeta ${dto.folder} del expediente ${id}, sha256=${hash.substring(0, 16)}...`,
     );
 
     return attachment;
