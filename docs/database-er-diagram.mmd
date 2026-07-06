@@ -1,0 +1,199 @@
+erDiagram
+    User {
+        string id PK
+        string email UK
+        string password
+        string cedula UK
+        string name
+        string lastname
+        string direction
+        UserStatus status
+        boolean emailVerified
+        string verificationCode
+        datetime verificationExpiry
+        datetime createdAt
+        datetime updatedAt
+        datetime deletedAt
+    }
+
+    RefreshToken {
+        string id PK
+        string userId FK
+        string tokenHash
+        RefreshTokenStatus status
+        datetime expiresAt
+        datetime createdAt
+        datetime revokedAt
+    }
+
+    Permission {
+        string id PK
+        string name UK
+        string description
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    Role {
+        string id PK
+        string name UK
+        string description
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    UserPermission {
+        string userId PK,FK
+        string permissionId PK,FK
+        datetime createdAt
+    }
+
+    RolePermission {
+        string roleId PK,FK
+        string permissionId PK,FK
+        datetime createdAt
+    }
+
+    UserRole {
+        string userId PK,FK,UK
+        string roleId PK,FK
+        datetime createdAt
+    }
+
+    RoleAssignment {
+        string id PK
+        string userId FK
+        string roleId FK
+        string assignedById FK
+        datetime assignedAt
+    }
+
+    Request {
+        string id PK
+        RequestType request_type
+        RequestStatus status
+        string citizen_id FK
+        string architect_id FK
+        string property_id FK,UK
+        datetime created_at
+        datetime updated_at
+    }
+
+    Property {
+        string id PK
+        string cadastral_key
+        string address
+        float area
+        PropertyZone zone
+        string coordinates
+    }
+
+    Attachment {
+        string id PK
+        string request_id FK
+        string name
+        string type
+        string url
+        int size
+        string hash "SHA-256"
+        string folder
+        string ipfs_cid
+        string ipfs_status
+        datetime ipfs_uploaded_at
+        string ipfs_provider
+        string blockchain_status
+        string blockchain_tx_hash
+        datetime blockchain_anchored_at
+        string blockchain_network
+        string blockchain_contract_address
+        string blockchain_evidence_id
+        datetime created_at
+    }
+
+    RequestHistory {
+        string id PK
+        string request_id FK
+        string previous_status
+        string new_status
+        string comment
+        string responsible
+        datetime created_at
+    }
+
+    Inspection {
+        string id PK
+        string request_id FK,UK
+        datetime date
+        string technician
+        string comments
+        string_array photos
+        datetime created_at
+        datetime updated_at
+    }
+
+    Resolution {
+        string id PK
+        string request_id FK,UK
+        string comments
+        float payment_amount
+        string_array items
+        datetime resolution_date
+        string calculation_detail
+        boolean auto_calculated
+    }
+
+    AuditLog {
+        string id PK
+        string user_id FK
+        string user_email
+        string action
+        string details
+        string ip_address
+        string previous_hash
+        string current_hash
+        datetime created_at
+    }
+
+    SecretaryDecision {
+        string id PK
+        string request_id FK,UK
+        string secretary_id FK
+        boolean approved
+        string remarks
+        boolean signature_validated
+        datetime created_at
+    }
+
+    FeeRule {
+        string id PK
+        RequestType request_type UK
+        PropertyZone zone UK
+        float base_fee
+        float rate_per_m2
+        string description
+        datetime created_at
+        datetime updated_at
+    }
+
+    User ||--o{ RefreshToken : owns
+    User ||--o{ UserPermission : receives
+    Permission ||--o{ UserPermission : grants
+    Role ||--o{ RolePermission : contains
+    Permission ||--o{ RolePermission : grants
+    User ||--o| UserRole : has
+    Role ||--o{ UserRole : assigned_to
+    User ||--o{ RoleAssignment : receives
+    User ||--o{ RoleAssignment : assigns
+    Role ||--o{ RoleAssignment : records
+
+    User ||--o{ Request : submits_as_citizen
+    User o|--o{ Request : sponsors_as_architect
+    Request o|--|| Property : identifies
+    Request ||--o{ Attachment : contains
+    Request ||--o{ RequestHistory : tracks
+    Request ||--o| Inspection : has
+    Request ||--o| Resolution : resolves_with
+    Request ||--o| SecretaryDecision : reviewed_by
+    User ||--o{ SecretaryDecision : decides
+
+    User o|--o{ AuditLog : generates
