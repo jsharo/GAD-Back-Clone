@@ -60,3 +60,9 @@ export class AssignRoleDto {
   @IsNotEmpty()
   roleName!: string;
 }
+
+export class SyncRolePermissionsDto {
+  @ApiProperty({ example: ['users.read', 'users.write'], type: [String] })
+  @IsString({ each: true })
+  permissionIds!: string[];
+}

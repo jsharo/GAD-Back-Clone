@@ -6,6 +6,7 @@ import {
   Delete,
   Param,
   Body,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
@@ -57,7 +58,8 @@ export class UsersController {
       dto.roleName,
       admin,
     );
-    return { success: true, ...data };
+    const user = await this.usersService.presentUser(data.user);
+    return { success: true, message: data.message, user };
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -65,8 +67,12 @@ export class UsersController {
   @Get()
   @Roles(Role.ADMINISTRATOR, Role.SECRETARY)
   @ApiOperation({ summary: 'List all active users' })
-  async findAll() {
-    const data = await this.usersService.findAll();
+  async findAll(
+    @Query('role') role?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const parsedLimit = limit ? Math.min(Number(limit) || 100, 500) : 100;
+    const data = await this.usersService.findAllForAdmin(role, parsedLimit);
     return { success: true, data };
   }
 
@@ -82,11 +88,22 @@ export class UsersController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiBearerAuth()
+  @Get('dashboard/stats')
+  @Roles(Role.ADMINISTRATOR)
+  @ApiOperation({ summary: 'User counts for the admin dashboard' })
+  async getDashboardStats() {
+    const data = await this.usersService.getDashboardStats();
+    return { success: true, data };
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @ApiBearerAuth()
   @Get(':id')
   @Roles(Role.ADMINISTRATOR, Role.SECRETARY)
   @ApiOperation({ summary: 'Get user by id' })
   async findOne(@Param('id') id: string) {
-    const data = await this.usersService.findById(id);
+    const user = await this.usersService.findById(id);
+    const data = await this.usersService.presentUser(user);
     return { success: true, data };
   }
 
