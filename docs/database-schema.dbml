@@ -1,0 +1,368 @@
+Project GAD_Canar {
+  database_type: 'PostgreSQL'
+  Note: '''
+    Modelo de datos del sistema de tramites del GAD Municipal de Canar.
+    Fuente: prisma/schema.prisma.
+    Incluye autenticacion, autorizacion, expedientes, documentos,
+    integridad SHA-256, IPFS, blockchain y auditoria Hash Chain.
+  '''
+}
+
+// ================================================================
+// ENUMS
+// ================================================================
+
+Enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+Enum RefreshTokenStatus {
+  ACTIVE
+  REVOKED
+}
+
+Enum PropertyZone {
+  URBAN
+  RURAL
+}
+
+Enum RequestType {
+  CONSTRUCTION_PERMIT [note: 'Permiso de construccion']
+  BUILDING_LINE [note: 'Linea de fabrica']
+  PLAN_APPROVAL [note: 'Aprobacion de planos']
+}
+
+Enum RequestStatus {
+  DRAFT
+  PENDING_SECRETARY
+  OBSERVED
+  PENDING_TECHNICIAN
+  INSPECTION
+  PENDING_PAYMENT
+  PAID
+  APPROVED
+  REJECTED
+}
+
+// ================================================================
+// IDENTIDAD, AUTENTICACION Y AUTORIZACION
+// ================================================================
+
+Table "user" {
+  id varchar [pk, not null, note: 'Identificador CUID generado por Prisma']
+  name varchar [note: 'Nombres del usuario']
+  lastname varchar [note: 'Apellidos del usuario']
+  password varchar [not null, note: 'Contrasena almacenada como hash bcrypt']
+  email varchar [not null, unique]
+  cedula varchar [unique, note: 'Identificacion nacional opcional']
+  direction varchar [note: 'Direccion del usuario']
+  status UserStatus [not null, default: 'ACTIVE']
+
+  email_verified boolean [not null, default: false, note: 'Controla acceso posterior a la verificacion OTP']
+  verification_code varchar [note: 'Codigo OTP hasheado; nunca se almacena en texto plano']
+  verification_expiry timestamp [note: 'Fecha de expiracion del OTP']
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, note: 'Actualizado automaticamente por Prisma']
+  deleted_at timestamp [note: 'Borrado logico']
+
+  Note: 'Cuenta central utilizada por ciudadanos, profesionales y personal institucional.'
+}
+
+Table refresh_token {
+  id varchar [pk, not null, note: 'Identificador CUID generado por Prisma']
+  user_id varchar [not null]
+  token_hash varchar [not null, note: 'Refresh token almacenado como hash bcrypt']
+  status RefreshTokenStatus [not null, default: 'ACTIVE']
+  expires_at timestamp [not null]
+  created_at timestamp [not null, default: `now()`]
+  revoked_at timestamp
+
+  indexes {
+    (user_id, status) [name: 'refresh_token_user_status_idx']
+  }
+
+  Note: 'Sesiones renovables. La eliminacion del usuario elimina sus tokens en cascada.'
+}
+
+Table permission {
+  id varchar [pk, not null, note: 'Identificador CUID generado por Prisma']
+  name varchar [not null, unique]
+  description varchar
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, note: 'Actualizado automaticamente por Prisma']
+
+  Note: 'Catalogo de capacidades individuales del sistema.'
+}
+
+Table role {
+  id varchar [pk, not null, note: 'Identificador CUID generado por Prisma']
+  name varchar [not null, unique, note: 'Ejemplos: ADMINISTRATOR, SECRETARY, TECHNICIAN, FINANCIAL, USER, CITIZEN']
+  description varchar
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, note: 'Actualizado automaticamente por Prisma']
+
+  Note: 'Catalogo de roles utilizados por guards y decoradores del backend.'
+}
+
+Table user_permission {
+  user_id varchar [pk, not null]
+  permission_id varchar [pk, not null]
+  created_at timestamp [not null, default: `now()`]
+
+  Note: 'Relacion muchos a muchos entre usuarios y permisos directos.'
+}
+
+Table role_permission {
+  role_id varchar [pk, not null]
+  permission_id varchar [pk, not null]
+  created_at timestamp [not null, default: `now()`]
+
+  Note: 'Relacion muchos a muchos entre roles y permisos.'
+}
+
+Table user_role {
+  user_id varchar [pk, not null]
+  role_id varchar [pk, not null]
+  created_at timestamp [not null, default: `now()`]
+
+  indexes {
+    user_id [unique, name: 'user_role_one_role_per_user']
+  }
+
+  Note: 'Asignacion activa de rol. La restriccion unica limita cada usuario a un rol.'
+}
+
+Table role_assignments {
+  id varchar [pk, not null, note: 'Identificador CUID generado por Prisma']
+  user_id varchar [not null, note: 'Usuario que recibe el rol']
+  role_id varchar [not null, note: 'Rol asignado']
+  assigned_by_id varchar [not null, note: 'Usuario que realiza la asignacion']
+  assigned_at timestamp [not null, default: `now()`]
+
+  indexes {
+    user_id [name: 'role_assignments_user_idx']
+    role_id [name: 'role_assignments_role_idx']
+    assigned_by_id [name: 'role_assignments_assigner_idx']
+  }
+
+  Note: 'Trazabilidad administrativa de asignaciones de roles.'
+}
+
+// ================================================================
+// SOLICITUDES Y TRAMITES MUNICIPALES
+// ================================================================
+
+Table requests {
+  id uuid [pk, not null, note: 'UUID generado por Prisma']
+  request_type RequestType [not null]
+  status RequestStatus [not null, default: 'PENDING_SECRETARY']
+
+  citizen_id varchar [not null, note: 'Ciudadano propietario del expediente']
+  architect_id varchar [note: 'Profesional patrocinador opcional']
+  property_id uuid [not null, unique, note: 'Predio exclusivo del expediente']
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, note: 'Actualizado automaticamente por Prisma']
+
+  Note: 'Entidad principal del flujo de tramites municipales.'
+}
+
+Table properties {
+  id uuid [pk, not null, note: 'UUID generado por Prisma']
+  cadastral_key varchar [note: 'Clave catastral']
+  address varchar [not null]
+  area double [note: 'Area del predio en metros cuadrados']
+  zone PropertyZone [not null]
+  coordinates varchar [note: 'Coordenadas serializadas segun el flujo actual']
+
+  Note: 'Predio relacionado uno a uno con una solicitud.'
+}
+
+Table request_histories {
+  id uuid [pk, not null, note: 'UUID generado por Prisma']
+  previous_status varchar [not null]
+  new_status varchar [not null]
+  comment varchar [not null]
+  responsible varchar [not null, note: 'Identidad textual del responsable']
+  request_id uuid [not null]
+  created_at timestamp [not null, default: `now()`]
+
+  Note: 'Historial funcional de cambios de estado del expediente.'
+}
+
+Table inspections {
+  id uuid [pk, not null, note: 'UUID generado por Prisma']
+  date timestamp [not null]
+  technician varchar [not null, note: 'Nombre textual del tecnico responsable']
+  comments varchar
+  photos text[] [not null, note: 'Rutas locales de evidencias fotograficas']
+  request_id uuid [not null, unique]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, note: 'Actualizado automaticamente por Prisma']
+
+  Note: 'Inspeccion tecnica unica por expediente.'
+}
+
+Table resolutions {
+  id uuid [pk, not null, note: 'UUID generado por Prisma']
+  comments varchar [not null]
+  payment_amount double
+  items text[] [not null]
+  resolution_date timestamp [not null, default: `now()`]
+  calculation_detail text [note: 'Detalle extendido del calculo']
+  auto_calculated boolean [not null, default: false]
+  request_id uuid [not null, unique]
+
+  Note: 'Resolucion economica y tecnica unica por expediente.'
+}
+
+Table secretary_decisions {
+  id uuid [pk, not null, note: 'UUID generado por Prisma']
+  approved boolean [not null]
+  remarks text
+  signature_validated boolean [not null, default: false]
+  request_id uuid [not null, unique]
+  secretary_id varchar [not null]
+  created_at timestamp [not null, default: `now()`]
+
+  Note: 'Decision de secretaria y evidencia de validacion manual de firma.'
+}
+
+Table fee_rules {
+  id uuid [pk, not null, note: 'UUID generado por Prisma']
+  request_type RequestType [not null]
+  zone PropertyZone [not null]
+  base_fee double [not null]
+  rate_per_m2 double [not null]
+  description varchar [not null]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, note: 'Actualizado automaticamente por Prisma']
+
+  indexes {
+    (request_type, zone) [unique, name: 'fee_rules_request_type_zone_key']
+  }
+
+  Note: 'Reglas tarifarias seleccionadas por tipo de tramite y zona; no usa FK directa.'
+}
+
+// ================================================================
+// DOCUMENTOS, INTEGRIDAD, IPFS Y BLOCKCHAIN
+// ================================================================
+
+Table attachments {
+  id uuid [pk, not null, note: 'UUID generado por Prisma']
+  name varchar [not null, note: 'Nombre visible del documento']
+  type varchar [not null, note: 'MIME type']
+  url varchar [not null, note: 'Ruta del respaldo local protegido']
+  size int [note: 'Tamano del archivo en bytes']
+  hash varchar [note: 'SHA-256 almacenado para verificacion de integridad']
+  folder varchar [not null, default: 'OTROS']
+
+  ipfs_cid varchar [note: 'Content Identifier devuelto por IPFS']
+  ipfs_status varchar [default: 'PENDING', note: 'PENDING, UPLOADING, UPLOADED, FAILED o DISABLED']
+  ipfs_uploaded_at timestamp
+  ipfs_provider varchar [note: 'Proveedor o nodo IPFS utilizado']
+
+  blockchain_status varchar [default: 'PENDING', note: 'PENDING, ANCHORING, ANCHORED, FAILED o DISABLED']
+  blockchain_tx_hash varchar [note: 'Hash de la transaccion confirmada']
+  blockchain_anchored_at timestamp
+  blockchain_network varchar
+  blockchain_contract_address varchar
+  blockchain_evidence_id varchar [note: 'Identificador determinista de la evidencia']
+
+  request_id uuid [not null]
+  created_at timestamp [not null, default: `now()`]
+
+  Note: '''
+    Metadatos documentales completos. El archivo se mantiene localmente como respaldo.
+    SHA-256 verifica integridad, IPFS aporta direccionamiento por contenido y blockchain
+    registra evidencia sin almacenar el documento completo on-chain.
+  '''
+}
+
+// ================================================================
+// AUDITORIA E INTEGRIDAD DE EVENTOS
+// ================================================================
+
+Table audit_logs {
+  id uuid [pk, not null, note: 'UUID generado por Prisma']
+  action varchar [not null]
+  details varchar [not null]
+  ip_address varchar
+
+  user_id varchar [note: 'Relacion opcional; se conserva el log si el usuario se elimina']
+  user_email varchar [not null, note: 'Identidad textual preservada para trazabilidad']
+
+  previous_hash varchar [note: 'Hash del registro anterior en la cadena']
+  current_hash varchar [note: 'SHA-256 del payload canonico del registro actual']
+  created_at timestamp [not null, default: `now()`]
+
+  Note: 'Hash Chain de auditoria. Los registros antiguos pueden tener hashes nulos como legacy.'
+}
+
+// ================================================================
+// RELACIONES Y POLITICAS DE BORRADO
+// ================================================================
+
+Ref: refresh_token.user_id > "user".id [delete: cascade]
+
+Ref: user_permission.user_id > "user".id [delete: cascade]
+Ref: user_permission.permission_id > permission.id [delete: cascade]
+
+Ref: role_permission.role_id > role.id [delete: cascade]
+Ref: role_permission.permission_id > permission.id [delete: cascade]
+
+Ref: user_role.user_id > "user".id [delete: cascade]
+Ref: user_role.role_id > role.id [delete: cascade]
+
+Ref: role_assignments.user_id > "user".id [delete: cascade]
+Ref: role_assignments.role_id > role.id [delete: cascade]
+Ref: role_assignments.assigned_by_id > "user".id [delete: cascade]
+
+Ref: requests.citizen_id > "user".id
+Ref: requests.architect_id > "user".id
+Ref: requests.property_id - properties.id
+
+Ref: attachments.request_id > requests.id [delete: cascade]
+Ref: request_histories.request_id > requests.id [delete: cascade]
+Ref: inspections.request_id - requests.id [delete: cascade]
+Ref: resolutions.request_id - requests.id [delete: cascade]
+Ref: secretary_decisions.request_id - requests.id [delete: cascade]
+Ref: secretary_decisions.secretary_id > "user".id
+
+Ref: audit_logs.user_id > "user".id [delete: set null]
+
+// ================================================================
+// AGRUPACIONES VISUALES PARA PRESENTACION
+// ================================================================
+
+TableGroup identity_and_access {
+  "user"
+  refresh_token
+  permission
+  role
+  user_permission
+  role_permission
+  user_role
+  role_assignments
+}
+
+TableGroup municipal_requests {
+  requests
+  properties
+  request_histories
+  inspections
+  resolutions
+  secretary_decisions
+  fee_rules
+}
+
+TableGroup document_integrity {
+  attachments
+}
+
+TableGroup audit_hash_chain {
+  audit_logs
+}
