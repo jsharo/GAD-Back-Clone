@@ -15,7 +15,7 @@ export class AuthService {
     private readonly auditService: AuditService,
   ) {}
 
-  async login(loginDto: LoginDto) {
+  async login(loginDto: LoginDto, meta?: { ip?: string; agent?: string }) {
     const user = await this.usersService.validateCredentials(
       loginDto.email,
       loginDto.password,
@@ -36,7 +36,7 @@ export class AuthService {
       role,
     );
 
-    await this.tokensService.saveRefreshToken(user.id, refreshToken);
+    await this.tokensService.saveRefreshToken(user.id, refreshToken, meta);
 
     await this.auditService.logAction(
       user.id,
@@ -52,7 +52,7 @@ export class AuthService {
     };
   }
 
-  async refreshTokens(userId: string, refreshToken: string) {
+  async refreshTokens(userId: string, refreshToken: string, meta?: { ip?: string; agent?: string }) {
     const user = await this.usersService.findById(userId);
 
     if (!user || user.status !== UserStatus.ACTIVE) {
@@ -77,7 +77,7 @@ export class AuthService {
       throw new UnauthorizedException('User has no assigned role');
     }
 
-    await this.tokensService.revokeRefreshToken(storedToken.id);
+    await this.tokensService.revokeRefreshToken(storedToken.session_id);
 
     const tokens = await this.tokensService.generateTokens(
       userId,
@@ -85,7 +85,7 @@ export class AuthService {
       role,
     );
 
-    await this.tokensService.saveRefreshToken(userId, tokens.refreshToken);
+    await this.tokensService.saveRefreshToken(userId, tokens.refreshToken, meta);
 
     return tokens;
   }

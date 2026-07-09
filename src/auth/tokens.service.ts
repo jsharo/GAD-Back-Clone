@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Prisma, RefreshTokenStatus } from '@prisma/client';
+import { Prisma, SessionState } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -47,37 +47,40 @@ export class TokensService {
   async saveRefreshToken(
     userId: string,
     refreshToken: string,
+    meta?: { ip?: string; agent?: string },
     tx?: Prisma.TransactionClient,
   ): Promise<void> {
     const db = tx ?? this.prisma;
     const hashedToken = await bcrypt.hash(refreshToken, REFRESH_TOKEN_SALT_ROUNDS);
 
     const decoded = this.jwtService.decode(refreshToken) as { exp?: number } | null;
-    const expiresAt = decoded?.exp
+    const expires_at = decoded?.exp
       ? new Date(decoded.exp * 1000)
       : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    await db.refreshToken.create({
+    await db.session.create({
       data: {
-        userId,
-        tokenHash: hashedToken,
-        status: RefreshTokenStatus.ACTIVE,
-        expiresAt,
+        user_id: userId,
+        refresh_token: hashedToken,
+        state: SessionState.ACTIVE,
+        expires_at,
+        ip: meta?.ip ?? null,
+        agent: meta?.agent ?? null,
       },
     });
   }
 
   async validateRefreshToken(userId: string, refreshToken: string) {
-    const activeTokens = await this.prisma.refreshToken.findMany({
+    const activeTokens = await this.prisma.session.findMany({
       where: {
-        userId,
-        status: RefreshTokenStatus.ACTIVE,
-        expiresAt: { gt: new Date() },
+        user_id: userId,
+        state: SessionState.ACTIVE,
+        expires_at: { gt: new Date() },
       },
     });
 
     for (const storedToken of activeTokens) {
-      const isValid = await bcrypt.compare(refreshToken, storedToken.tokenHash);
+      const isValid = await bcrypt.compare(refreshToken, storedToken.refresh_token);
       if (isValid) {
         return storedToken;
       }
@@ -86,12 +89,12 @@ export class TokensService {
     return null;
   }
 
-  async revokeRefreshToken(refreshTokenId: string): Promise<void> {
-    await this.prisma.refreshToken.update({
-      where: { id: refreshTokenId },
+  async revokeRefreshToken(sessionId: string): Promise<void> {
+    await this.prisma.session.update({
+      where: { session_id: sessionId },
       data: {
-        status: RefreshTokenStatus.REVOKED,
-        revokedAt: new Date(),
+        state: SessionState.REVOKED,
+        revoked_at: new Date(),
       },
     });
   }
@@ -102,11 +105,11 @@ export class TokensService {
   ): Promise<void> {
     const db = tx ?? this.prisma;
 
-    await db.refreshToken.updateMany({
-      where: { userId, status: RefreshTokenStatus.ACTIVE },
+    await db.session.updateMany({
+      where: { user_id: userId, state: SessionState.ACTIVE },
       data: {
-        status: RefreshTokenStatus.REVOKED,
-        revokedAt: new Date(),
+        state: SessionState.REVOKED,
+        revoked_at: new Date(),
       },
     });
   }

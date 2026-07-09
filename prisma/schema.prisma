@@ -18,9 +18,10 @@ enum UserStatus {
   INACTIVE
 }
 
-enum RefreshTokenStatus {
+enum SessionState {
   ACTIVE
   REVOKED
+  EXPIRED
 }
 
 enum PropertyZone {
@@ -72,7 +73,7 @@ model User {
   roleAssignments      UserRole[]
   assignedRoles        RoleAssignment[] @relation("assignedTo")
   roleAssignmentsGiven RoleAssignment[] @relation("assignedBy")
-  refreshTokens        RefreshToken[]
+  sessions             Session[]
 
   // External module relations
   citizenRequests    Request[]             @relation("CitizenRequests")
@@ -83,19 +84,21 @@ model User {
   @@map("user")
 }
 
-model RefreshToken {
-  id        String             @id @default(cuid())
-  userId    String             @map("user_id")
-  tokenHash String             @map("token_hash")
-  status    RefreshTokenStatus @default(ACTIVE)
-  expiresAt DateTime           @map("expires_at")
-  createdAt DateTime           @default(now()) @map("created_at")
-  revokedAt DateTime?          @map("revoked_at")
+model Session {
+  session_id    String       @id @default(cuid())
+  user_id       String
+  refresh_token String
+  state         SessionState @default(ACTIVE)
+  ip            String?
+  agent         String?
+  expires_at    DateTime
+  created_at    DateTime     @default(now())
+  revoked_at    DateTime?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  @@index([userId, status])
-  @@map("refresh_token")
+  @@index([user_id, state])
+  @@map("session")
 }
 
 model Permission {
