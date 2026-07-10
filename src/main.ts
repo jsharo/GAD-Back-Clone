@@ -6,6 +6,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
@@ -16,13 +17,16 @@ async function bootstrap() {
   // All routes are exposed at /api/v1/* (compatible with the frontend)
   app.setGlobalPrefix('api/v1');
 
+  // ── Cookie Parser ────────────────────────────────────────────────
+  app.use(cookieParser());
+
   // ── CORS ────────────────────────────────────────────────────────
   app.enableCors({
     origin: process.env.FRONTEND_URL || 'http://localhost:5173',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     exposedHeaders: ['Content-Disposition', 'Content-Length'],
-    credentials: false,
+    credentials: true,
   });
 
   // ── Global DTO Validation Pipe ───────────────────────────────────
