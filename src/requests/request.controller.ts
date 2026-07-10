@@ -24,6 +24,7 @@ import {
   ApiQuery,
   ApiProduces,
   ApiOkResponse,
+  ApiResponse,
 } from '@nestjs/swagger';
 import { createReadStream } from 'fs';
 import { Response } from 'express';
@@ -92,6 +93,29 @@ export class RequestController {
   @ApiQuery({ name: 'status', required: false, description: 'Filtrar por estado de la solicitud' })
   async findAll(@Query('status') status?: string) {
     const data = await this.request_service.findAll(status);
+    return { success: true, data };
+  }
+
+  @Get(':id/traceability')
+  @Roles(
+    Role.CITIZEN,
+    Role.USER,
+    Role.SECRETARY,
+    Role.TECHNICIAN,
+    Role.FINANCIAL,
+    Role.ADMINISTRATOR,
+  )
+  @ApiOperation({
+    summary: 'Get request traceability report',
+    description:
+      'Consolidates request, history, attachments, SHA-256 integrity, IPFS, blockchain and related audit events.',
+  })
+  @ApiResponse({ status: 200, description: 'Traceability report generated successfully.' })
+  @ApiResponse({ status: 401, description: 'Authentication token is missing or invalid.' })
+  @ApiResponse({ status: 403, description: 'User does not have access to this request.' })
+  @ApiResponse({ status: 404, description: 'Request was not found.' })
+  async getTraceabilityReport(@Param('id') id: string, @CurrentUser() user: any) {
+    const data = await this.request_service.getTraceabilityReport(id, user);
     return { success: true, data };
   }
 

@@ -287,6 +287,159 @@ export class RequestService {
     return request;
   }
 
+  async getTraceabilityReport(id: string, active_user: any) {
+    await this.validateRequestAccess(id, active_user);
+
+    const request = await this.prisma.request.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        request_type: true,
+        status: true,
+        created_at: true,
+        updated_at: true,
+        history: {
+          select: {
+            id: true,
+            previous_status: true,
+            new_status: true,
+            comment: true,
+            responsible: true,
+            created_at: true,
+          },
+          orderBy: { created_at: 'asc' },
+        },
+        attachments: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            size: true,
+            folder: true,
+            hash: true,
+            ipfs_cid: true,
+            ipfs_status: true,
+            ipfs_uploaded_at: true,
+            ipfs_provider: true,
+            blockchain_status: true,
+            blockchain_tx_hash: true,
+            blockchain_anchored_at: true,
+            blockchain_network: true,
+            blockchain_contract_address: true,
+            blockchain_evidence_id: true,
+            created_at: true,
+            url: true,
+          },
+          orderBy: [{ folder: 'asc' }, { created_at: 'asc' }],
+        },
+      },
+    });
+
+    if (!request) {
+      throw new NotFoundException('Solicitud no encontrada.');
+    }
+
+    const attachments = request.attachments.map((attachment) => {
+      const integrity = this.getAttachmentIntegritySnapshot(attachment);
+
+      return {
+        id: attachment.id,
+        name: attachment.name,
+        type: attachment.type,
+        size: attachment.size,
+        folder: attachment.folder,
+        created_at: attachment.created_at,
+        sha256_hash: attachment.hash,
+        integrity,
+        ipfs: {
+          status: attachment.ipfs_status,
+          cid: attachment.ipfs_cid,
+          provider: attachment.ipfs_provider,
+          uploaded_at: attachment.ipfs_uploaded_at,
+        },
+        blockchain: {
+          status: attachment.blockchain_status,
+          evidence_id: attachment.blockchain_evidence_id,
+          transaction_hash: attachment.blockchain_tx_hash,
+          network: attachment.blockchain_network,
+          contract_address: attachment.blockchain_contract_address,
+          anchored_at: attachment.blockchain_anchored_at,
+        },
+      };
+    });
+
+    const traceability_terms = [
+      request.id,
+      ...request.attachments.map((attachment) => attachment.id),
+    ];
+    const audit_events = await this.prisma.auditLog.findMany({
+      where: {
+        OR: traceability_terms.map((term) => ({
+          details: { contains: term },
+        })),
+      },
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+      take: 100,
+      select: {
+        action: true,
+        user_email: true,
+        created_at: true,
+        current_hash: true,
+        user: {
+          select: {
+            roleAssignments: {
+              select: { role: { select: { name: true } } },
+              take: 1,
+            },
+          },
+        },
+      },
+    });
+
+    return {
+      request: {
+        id: request.id,
+        request_type: request.request_type,
+        status: request.status,
+        created_at: request.created_at,
+        updated_at: request.updated_at,
+      },
+      history: request.history.map((item) => ({
+        id: item.id,
+        previous_status: item.previous_status,
+        new_status: item.new_status,
+        status: item.new_status,
+        comment: item.comment,
+        responsible: item.responsible,
+        created_at: item.created_at,
+      })),
+      attachments,
+      audit_events: audit_events.map((event) => ({
+        action: event.action,
+        actor_email: event.user_email,
+        actor_role: event.user?.roleAssignments?.[0]?.role.name ?? null,
+        created_at: event.created_at,
+        current_hash: event.current_hash,
+      })),
+      summary: {
+        attachments_total: attachments.length,
+        attachments_with_hash: attachments.filter((attachment) => attachment.sha256_hash).length,
+        attachments_integrity_valid: attachments.filter(
+          (attachment) => attachment.integrity.verifiable && attachment.integrity.valid,
+        ).length,
+        attachments_ipfs_uploaded: attachments.filter(
+          (attachment) => attachment.ipfs.status === 'UPLOADED' && attachment.ipfs.cid,
+        ).length,
+        attachments_blockchain_anchored: attachments.filter(
+          (attachment) =>
+            attachment.blockchain.status === 'ANCHORED' &&
+            attachment.blockchain.transaction_hash,
+        ).length,
+        audit_events_total: audit_events.length,
+      },
+    };
+  }
+
   // ──────────────────────────────────────────────────────────────────────────
   // UPDATE STATUS (generic — for FINANCIAL/SUPERADMIN manual transitions)
   // ──────────────────────────────────────────────────────────────────────────
@@ -773,6 +926,45 @@ export class RequestService {
       file_path: real_file_path,
       file_size: file_stats.size,
     };
+  }
+
+  private getAttachmentIntegritySnapshot(attachment: any) {
+    try {
+      const file = this.resolveAttachmentFile(attachment);
+      const current_hash = createHash('sha256')
+        .update(fs.readFileSync(file.file_path))
+        .digest('hex');
+
+      if (!attachment.hash) {
+        return {
+          verifiable: false,
+          valid: false,
+          stored_hash: null,
+          current_hash,
+          message: 'Attachment does not have a stored hash.',
+        };
+      }
+
+      const valid = attachment.hash === current_hash;
+
+      return {
+        verifiable: true,
+        valid,
+        stored_hash: attachment.hash,
+        current_hash,
+        message: valid
+          ? 'Attachment integrity is valid.'
+          : 'Attachment integrity violation detected.',
+      };
+    } catch {
+      return {
+        verifiable: false,
+        valid: false,
+        stored_hash: attachment.hash || null,
+        current_hash: null,
+        message: 'Attachment file is not available for verification.',
+      };
+    }
   }
 
   async downloadAttachment(id: string, attachment_id: string, active_user: any) {
