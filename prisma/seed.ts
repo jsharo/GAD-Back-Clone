@@ -50,6 +50,57 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   FINANCIAL: ['requests.read', 'requests.review'],
 };
 
+const DEMO_USERS = [
+  {
+    role: 'ADMINISTRATOR',
+    email: 'admin@gadcanar.gob.ec',
+    password: 'Admin123*',
+    name: 'System',
+    lastname: 'Administrator',
+    cedula: '0000000000',
+  },
+  {
+    role: 'SECRETARY',
+    email: 'secretaria@gadcanar.gob.ec',
+    password: '123456',
+    name: 'Secretaria',
+    lastname: 'Demo',
+    cedula: '0100000001',
+  },
+  {
+    role: 'TECHNICIAN',
+    email: 'tecnico.urbano@gadcanar.gob.ec',
+    password: '123456',
+    name: 'Tecnico',
+    lastname: 'Urbano',
+    cedula: '0100000002',
+  },
+  {
+    role: 'FINANCIAL',
+    email: 'financiero@gadcanar.gob.ec',
+    password: '123456',
+    name: 'Financiero',
+    lastname: 'Demo',
+    cedula: '0100000003',
+  },
+  {
+    role: 'USER',
+    email: 'arquitecto@gadcanar.gob.ec',
+    password: '123456',
+    name: 'Arquitecto',
+    lastname: 'Demo',
+    cedula: '0100000004',
+  },
+  {
+    role: 'CITIZEN',
+    email: 'ciudadano@correo.ec',
+    password: '123456',
+    name: 'Ciudadano',
+    lastname: 'Demo',
+    cedula: '0100000005',
+  },
+];
+
 async function seedPermissions() {
   console.log('Seeding permissions...');
 
@@ -129,62 +180,74 @@ async function seedRolePermissions() {
 }
 
 async function seedAdminUser() {
-  console.log('Seeding administrator user...');
+  console.log('Seeding demo users...');
 
-  const adminRole = await prisma.role.findUnique({
-    where: {
-      name: 'ADMINISTRATOR',
-    },
-  });
-
-  if (!adminRole) {
-    throw new Error('ADMINISTRATOR role not found');
-  }
-
-  const passwordHash = await bcrypt.hash('Admin123*', 10);
-
-  const adminUser = await prisma.user.upsert({
-    where: {
-      email: 'admin@gadcanar.gob.ec',
-    },
-    update: {},
-    create: {
-      name: 'System',
-      lastname: 'Administrator',
-      email: 'admin@gadcanar.gob.ec',
-      cedula: '0000000000',
-      password: passwordHash,
-      status: UserStatus.ACTIVE,
-      emailVerified: true,
-    },
-  });
-
-  await prisma.userRole.upsert({
-    where: {
-      userId: adminUser.id,
-    },
-    update: {},
-    create: {
-      userId: adminUser.id,
-      roleId: adminRole.id,
-    },
-  });
-
-  const existingAssignment = await prisma.roleAssignment.findFirst({
-    where: {
-      userId: adminUser.id,
-      roleId: adminRole.id,
-    },
-  });
-
-  if (!existingAssignment) {
-    await prisma.roleAssignment.create({
-      data: {
-        userId: adminUser.id,
-        roleId: adminRole.id,
-        assignedById: adminUser.id,
+  for (const demoUser of DEMO_USERS) {
+    const role = await prisma.role.findUnique({
+      where: {
+        name: demoUser.role,
       },
     });
+
+    if (!role) {
+      throw new Error(`${demoUser.role} role not found`);
+    }
+
+    const passwordHash = await bcrypt.hash(demoUser.password, 10);
+
+    const user = await prisma.user.upsert({
+      where: {
+        email: demoUser.email,
+      },
+      update: {
+        name: demoUser.name,
+        lastname: demoUser.lastname,
+        password: passwordHash,
+        status: UserStatus.ACTIVE,
+        emailVerified: true,
+        verificationCode: null,
+        verificationExpiry: null,
+      },
+      create: {
+        name: demoUser.name,
+        lastname: demoUser.lastname,
+        email: demoUser.email,
+        cedula: demoUser.cedula,
+        password: passwordHash,
+        status: UserStatus.ACTIVE,
+        emailVerified: true,
+      },
+    });
+
+    await prisma.userRole.upsert({
+      where: {
+        userId: user.id,
+      },
+      update: {
+        roleId: role.id,
+      },
+      create: {
+        userId: user.id,
+        roleId: role.id,
+      },
+    });
+
+    const existingAssignment = await prisma.roleAssignment.findFirst({
+      where: {
+        userId: user.id,
+        roleId: role.id,
+      },
+    });
+
+    if (!existingAssignment) {
+      await prisma.roleAssignment.create({
+        data: {
+          userId: user.id,
+          roleId: role.id,
+          assignedById: user.id,
+        },
+      });
+    }
   }
 }
 
