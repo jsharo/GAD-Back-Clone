@@ -4,8 +4,9 @@ import {
   BadRequestException,
   ForbiddenException,
   ConflictException,
+  InternalServerErrorException,
 } from '@nestjs/common';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { PrismaService } from '../prisma/prisma.service';
@@ -23,6 +24,12 @@ import { Role } from '../common/enums/role.enum';
 import { PropertyZone, RequestType } from '@prisma/client';
 import { IpfsService } from '../ipfs/ipfs.service';
 import { BlockchainService } from '../blockchain/blockchain.service';
+import {
+  createSafeInspectionStorageLocation,
+  createSafeStorageLocation,
+  ensurePathInsideRoot,
+  validateDocumentFile,
+} from './document-security';
 
 @Injectable()
 export class RequestService {
@@ -33,6 +40,34 @@ export class RequestService {
     private readonly ipfs_service: IpfsService,
     private readonly blockchain_service: BlockchainService,
   ) {}
+
+  private writeDocumentFile(file_path: string, buffer: Buffer) {
+    try {
+      fs.writeFileSync(file_path, buffer, { flag: 'wx' });
+    } catch {
+      throw new InternalServerErrorException(
+        'No se pudo almacenar el archivo de forma segura.',
+      );
+    }
+  }
+
+  private removeDocumentFile(file_path: string) {
+    try {
+      if (fs.existsSync(file_path)) fs.unlinkSync(file_path);
+    } catch {
+      // The original controlled error remains the response; no path is exposed.
+    }
+  }
+
+  private hashStoredDocument(file_path: string) {
+    return createHash('sha256').update(fs.readFileSync(file_path)).digest('hex');
+  }
+
+  private toPublicAttachment(attachment: any) {
+    const public_attachment = { ...attachment };
+    delete public_attachment.url;
+    return public_attachment;
+  }
 
   private async validateRequestAccess(
     request_id: string,
@@ -640,33 +675,42 @@ export class RequestService {
 
     const photo_urls: string[] = [];
     if (photos && photos.length > 0) {
-      const upload_dir = './uploads/inspections';
-      if (!fs.existsSync(upload_dir)) fs.mkdirSync(upload_dir, { recursive: true });
-      for (const file of photos) {
-        const hash = createHash('sha256').update(file.buffer).digest('hex');
-        const file_name = `${Date.now()}-${path.basename(file.originalname)}`;
-        const file_path = path.join(upload_dir, file_name);
-        const file_url = `/uploads/inspections/${file_name}`;
-        fs.writeFileSync(file_path, file.buffer);
-        photo_urls.push(file_url);
+      const validated_photos = photos.map((file) => ({
+        file,
+        validated: validateDocumentFile(file, 'inspection-image'),
+      }));
 
-        await this.prisma.attachment.create({
-          data: {
-            name: file.originalname,
-            type: file.mimetype,
-            url: file_url,
-            size: file.size,
-            hash,
-            folder: 'INFORMES',
-            request_id: id,
-          },
-        });
+      for (const { file, validated } of validated_photos) {
+        const storage = createSafeInspectionStorageLocation(validated.extension);
+        this.writeDocumentFile(storage.file_path, file.buffer);
+        const hash = this.hashStoredDocument(storage.file_path);
+
+        try {
+          await this.prisma.attachment.create({
+            data: {
+              name: validated.display_name,
+              type: validated.mime_type,
+              url: storage.url,
+              size: file.buffer.length,
+              hash,
+              folder: 'INFORMES',
+              request_id: id,
+            },
+          });
+        } catch {
+          this.removeDocumentFile(storage.file_path);
+          throw new InternalServerErrorException(
+            'No se pudo registrar el archivo de inspeccion.',
+          );
+        }
+
+        photo_urls.push(storage.url);
 
         await this.audit_service.logAction(
           active_user.id,
           active_user.email,
           'UPLOAD_INSPECTION_FILE',
-          `Inspection file uploaded for request ${id}: ${file.originalname}, sha256=${hash}`,
+          `Inspection file uploaded for request ${id}: ${validated.display_name}, sha256=${hash}`,
         );
       }
     }
@@ -794,13 +838,10 @@ export class RequestService {
     active_user: any,
   ) {
     const access_context = await this.validateRequestAccess(id, active_user);
-
-    if (!file) throw new BadRequestException('Se requiere un archivo para adjuntar.');
-
-    const hash = createHash('sha256').update(file.buffer).digest('hex');
+    const validated_file = validateDocumentFile(file, 'document', dto.name);
 
     // ── Detección de cambio de hash (NO bloqueante) ─────────────────────────
-    const doc_name = dto.name || file.originalname;
+    const doc_name = validated_file.display_name;
     const previous_attachment = await this.prisma.attachment.findFirst({
       where: {
         request_id: id,
@@ -810,11 +851,36 @@ export class RequestService {
       orderBy: { created_at: 'desc' },
     });
 
-    if (
-      previous_attachment?.hash &&
-      previous_attachment.hash !== hash
-    ) {
-      // Registrar alerta en el historial del trámite
+    const storage = createSafeStorageLocation(
+      id,
+      dto.folder,
+      validated_file.extension,
+    );
+    this.writeDocumentFile(storage.file_path, file.buffer);
+    const hash = this.hashStoredDocument(storage.file_path);
+
+    // Crear registro en BD
+    let attachment: any;
+    try {
+      attachment = await this.prisma.attachment.create({
+        data: {
+          name: doc_name,
+          type: validated_file.mime_type,
+          url: storage.url,
+          size: file.buffer.length,
+          hash,
+          folder: dto.folder,
+          request_id: id,
+        },
+      });
+    } catch {
+      this.removeDocumentFile(storage.file_path);
+      throw new InternalServerErrorException(
+        'No se pudo registrar el documento adjunto.',
+      );
+    }
+
+    if (previous_attachment?.hash && previous_attachment.hash !== hash) {
       await this.prisma.requestHistory.create({
         data: {
           previous_status: access_context.status,
@@ -839,29 +905,6 @@ export class RequestService {
       );
     }
 
-    // Guardar archivo físico
-    const folder_path = path.join('./uploads', 'expedientes', id, dto.folder);
-    if (!fs.existsSync(folder_path)) fs.mkdirSync(folder_path, { recursive: true });
-
-    const safe_name = `${Date.now()}-${path.basename(file.originalname).replace(/\s+/g, '_')}`;
-    const file_path = path.join(folder_path, safe_name);
-    fs.writeFileSync(file_path, file.buffer);
-
-    const url = `/uploads/expedientes/${id}/${dto.folder}/${safe_name}`;
-
-    // Crear registro en BD
-    const attachment = await this.prisma.attachment.create({
-      data: {
-        name: doc_name,
-        type: file.mimetype,
-        url,
-        size: file.size,
-        hash,
-        folder: dto.folder,
-        request_id: id,
-      },
-    });
-
     await this.audit_service.logAction(
       active_user.id,
       active_user.email,
@@ -869,7 +912,7 @@ export class RequestService {
       `Documento "${attachment.name}" cargado en carpeta ${dto.folder} del expediente ${id}, sha256=${hash.substring(0, 16)}...`,
     );
 
-    return attachment;
+    return this.toPublicAttachment(attachment);
   }
 
   /** Lista los adjuntos de un expediente, con filtro opcional por carpeta. */
@@ -879,22 +922,30 @@ export class RequestService {
     const where: any = { request_id: id };
     if (folder) where.folder = folder;
 
-    return this.prisma.attachment.findMany({
+    const attachments = await this.prisma.attachment.findMany({
       where,
       orderBy: [{ folder: 'asc' }, { created_at: 'asc' }],
     });
+    return attachments.map((attachment) => this.toPublicAttachment(attachment));
+  }
+
+  private resolveAttachmentStoragePath(attachment: any) {
+    if (!attachment?.url || typeof attachment.url !== 'string') {
+      throw new ForbiddenException('La ruta del documento no es valida.');
+    }
+
+    const uploads_root = path.resolve(process.cwd(), 'uploads');
+    const relative_url = attachment.url.replace(/^[/\\]+/, '');
+    const resolved_file_path = path.resolve(process.cwd(), relative_url);
+    ensurePathInsideRoot(uploads_root, resolved_file_path);
+
+    return { uploads_root, resolved_file_path };
   }
 
   /** Resuelve un adjunto autorizado a una ruta física segura para su entrega. */
   private resolveAttachmentFile(attachment: any) {
-    const uploads_root = path.resolve(process.cwd(), 'uploads');
-    const relative_url = attachment.url.replace(/^[/\\]+/, '');
-    const resolved_file_path = path.resolve(process.cwd(), relative_url);
-    const relative_path = path.relative(uploads_root, resolved_file_path);
-
-    if (relative_path.startsWith('..') || path.isAbsolute(relative_path)) {
-      throw new ForbiddenException('La ruta del documento no es valida.');
-    }
+    const { uploads_root, resolved_file_path } =
+      this.resolveAttachmentStoragePath(attachment);
 
     if (!fs.existsSync(resolved_file_path)) {
       throw new NotFoundException('El archivo fisico no existe.');
@@ -976,46 +1027,12 @@ export class RequestService {
     if (!attachment) {
       throw new NotFoundException('Adjunto no encontrado en este expediente.');
     }
-
-    const uploads_root = path.resolve(process.cwd(), 'uploads');
-    const relative_url = attachment.url.replace(/^[/\\]+/, '');
-    const resolved_file_path = path.resolve(process.cwd(), relative_url);
-    const relative_path = path.relative(uploads_root, resolved_file_path);
-
-    if (relative_path.startsWith('..') || path.isAbsolute(relative_path)) {
-      throw new ForbiddenException('La ruta del documento no es válida.');
-    }
-
-    if (!fs.existsSync(resolved_file_path)) {
-      throw new NotFoundException('El archivo físico no existe.');
-    }
-
-    let real_uploads_root: string;
-    let real_file_path: string;
-    try {
-      real_uploads_root = fs.realpathSync(uploads_root);
-      real_file_path = fs.realpathSync(resolved_file_path);
-    } catch {
-      throw new NotFoundException('El archivo físico no existe.');
-    }
-
-    const real_relative_path = path.relative(real_uploads_root, real_file_path);
-    if (
-      real_relative_path.startsWith('..') ||
-      path.isAbsolute(real_relative_path)
-    ) {
-      throw new ForbiddenException('La ruta del documento no es válida.');
-    }
-
-    const file_stats = fs.statSync(real_file_path);
-    if (!file_stats.isFile()) {
-      throw new NotFoundException('El archivo físico no existe.');
-    }
+    const file = this.resolveAttachmentFile(attachment);
 
     return {
       attachment,
-      file_path: real_file_path,
-      file_size: file_stats.size,
+      file_path: file.file_path,
+      file_size: file.file_size,
     };
   }
 
@@ -1035,8 +1052,8 @@ export class RequestService {
       .update(fs.readFileSync(file.file_path))
       .digest('hex');
 
-    if (!attachment.hash) {
-      return {
+    const result = !attachment.hash
+      ? {
         success: true,
         valid: false,
         verifiable: false,
@@ -1044,22 +1061,33 @@ export class RequestService {
         stored_hash: null,
         current_hash,
         message: 'Attachment does not have a stored hash.',
+      }
+      : {
+        success: true,
+        valid: attachment.hash === current_hash,
+        verifiable: true,
+        attachment_id: attachment.id,
+        stored_hash: attachment.hash,
+        current_hash,
+        message:
+          attachment.hash === current_hash
+            ? 'Attachment integrity is valid.'
+            : 'Attachment integrity violation detected.',
       };
-    }
 
-    const valid = attachment.hash === current_hash;
+    await this.audit_service.logAction(
+      active_user.id,
+      active_user.email,
+      'VERIFY_ATTACHMENT_INTEGRITY',
+      JSON.stringify({
+        requestId: id,
+        attachmentId: attachment.id,
+        valid: result.valid,
+        verifiable: result.verifiable,
+      }),
+    );
 
-    return {
-      success: true,
-      valid,
-      verifiable: true,
-      attachment_id: attachment.id,
-      stored_hash: attachment.hash,
-      current_hash,
-      message: valid
-        ? 'Attachment integrity is valid.'
-        : 'Attachment integrity violation detected.',
-    };
+    return result;
   }
 
   async uploadAttachmentToIpfs(
@@ -1376,13 +1404,45 @@ export class RequestService {
     });
     if (!attachment) throw new NotFoundException('Adjunto no encontrado en este expediente.');
 
-    // Eliminar archivo físico si existe
-    const local_path = path.join('.', attachment.url);
-    if (fs.existsSync(local_path)) {
-      fs.unlinkSync(local_path);
+    const { uploads_root, resolved_file_path } =
+      this.resolveAttachmentStoragePath(attachment);
+    let staged_file_path: string | null = null;
+
+    if (fs.existsSync(resolved_file_path)) {
+      const file = this.resolveAttachmentFile(attachment);
+      staged_file_path = ensurePathInsideRoot(
+        uploads_root,
+        `${file.file_path}.delete-${randomUUID()}`,
+      );
+      try {
+        fs.renameSync(file.file_path, staged_file_path);
+      } catch {
+        throw new InternalServerErrorException(
+          'No se pudo preparar el documento para su eliminacion.',
+        );
+      }
     }
 
-    await this.prisma.attachment.delete({ where: { id: attachment_id } });
+    try {
+      await this.prisma.attachment.delete({ where: { id: attachment_id } });
+    } catch {
+      if (staged_file_path && fs.existsSync(staged_file_path)) {
+        try {
+          fs.renameSync(staged_file_path, resolved_file_path);
+        } catch {
+          throw new InternalServerErrorException(
+            'No se pudo restaurar el documento despues del error de base de datos.',
+          );
+        }
+      }
+      throw new InternalServerErrorException(
+        'No se pudo eliminar el registro del documento.',
+      );
+    }
+
+    if (staged_file_path) {
+      this.removeDocumentFile(staged_file_path);
+    }
 
     await this.audit_service.logAction(
       active_user.id,
