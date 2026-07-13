@@ -36,6 +36,11 @@ import { InspectionReportDto } from './dto/inspection-report.dto';
 import { ResolveRequestDto } from './dto/resolve-request.dto';
 import { SecretaryReviewDto } from './dto/secretary-review.dto';
 import { UploadAttachmentDto } from './dto/upload-attachment.dto';
+import {
+  createDocumentFileFilter,
+  MAX_DOCUMENT_FILE_SIZE,
+  sanitizeDocumentDisplayName,
+} from './document-security';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -196,7 +201,12 @@ export class RequestController {
   @Roles(Role.TECHNICIAN, Role.ADMINISTRATOR)
   @ApiOperation({ summary: 'Subir informe técnico y fotos de la inspección' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FilesInterceptor('photos', 5))
+  @UseInterceptors(
+    FilesInterceptor('photos', 5, {
+      limits: { fileSize: MAX_DOCUMENT_FILE_SIZE, files: 5 },
+      fileFilter: createDocumentFileFilter('inspection-image'),
+    }),
+  )
   async uploadInspectionReport(
     @Param('id') id: string,
     @Body() report_dto: InspectionReportDto,
@@ -260,7 +270,12 @@ export class RequestController {
       required: ['file', 'folder'],
     },
   })
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: MAX_DOCUMENT_FILE_SIZE, files: 1 },
+      fileFilter: createDocumentFileFilter(),
+    }),
+  )
   async uploadAttachment(
     @Param('id') id: string,
     @Body() dto: UploadAttachmentDto,
@@ -325,18 +340,13 @@ export class RequestController {
       user,
     );
     const content_type = file.attachment.type || 'application/octet-stream';
-    const inline_types = new Set([
-      'application/pdf',
-      'image/gif',
-      'image/jpeg',
-      'image/png',
-      'image/webp',
-      'text/plain',
-    ]);
+    const inline_types = new Set(['application/pdf', 'image/jpeg', 'image/png']);
     const disposition = inline_types.has(content_type)
       ? 'inline'
       : 'attachment';
-    const encoded_name = encodeURIComponent(file.attachment.name);
+    const encoded_name = encodeURIComponent(
+      sanitizeDocumentDisplayName(file.attachment.name),
+    );
 
     response.setHeader('Content-Type', content_type);
     response.setHeader(
