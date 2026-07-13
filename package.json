@@ -7,7 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
-    "start": "node dist/main",
+    "start": "node dist/src/main",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "db:migrate": "prisma migrate dev",
@@ -16,7 +16,11 @@
     "db:seed": "ts-node prisma/seed.ts",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
-    "test:critical": "npm run build && node --test test/document-security.test.js test/critical/critical-backend.test.js"
+    "test:critical": "npm run build && node --test test/document-security.test.js test/critical/critical-backend.test.js",
+    "demo:preflight": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/preflight.ps1",
+    "demo:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/start-demo.ps1",
+    "demo:check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/check-demo.ps1",
+    "demo:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/stop-demo.ps1"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
