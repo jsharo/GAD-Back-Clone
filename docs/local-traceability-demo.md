@@ -1,5 +1,7 @@
 # Local Traceability Demo Guide
 
+> The recommended entry point is now [Reproducible Demo Environment](reproducible-demo-environment.md). Use this guide for the detailed IPFS and blockchain reference after the local environment is running.
+
 ## 1. Purpose
 
 This guide documents how to reproduce the local document traceability demo for the GAD Canar backend:
