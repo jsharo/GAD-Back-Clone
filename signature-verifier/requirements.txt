@@ -1,0 +1,1 @@
+pyHanko[async-http]==0.35.2

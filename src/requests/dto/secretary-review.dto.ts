@@ -4,25 +4,33 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 /**
  * SecretaryReviewDto — Cuerpo de la decisión de la secretaría sobre un trámite.
  *
- * Flujo (actualizado — verificación NO bloqueante):
- *  - signature_validated=false  → Alerta informativa en historial (NO bloquea el avance).
- *  - approved=false             → Estado OBSERVED; el expediente regresa al ciudadano/profesional.
- *  - approved=true              → Estado PENDING_TECHNICIAN (con o sin firma validada).
+ * Flujo (verificación automática y excepción no bloqueante):
+ *  - El backend deriva signature_validated del informe de firmas.
+ *  - Sin coincidencia, aprobar exige acknowledge_signature_warning=true.
+ *  - approved=false lleva el expediente a OBSERVED.
+ *  - approved=true lleva el expediente a PENDING_TECHNICIAN.
  */
 export class SecretaryReviewDto {
-  /**
-   * Indica que la secretaria verificó manualmente que el PDF del profesional
-   * habilitado contiene una firma digital válida.
-   * Si es `false`, el sistema registra una alerta informativa pero permite continuar.
-   */
-  @ApiProperty({
-    example: true,
+  @ApiPropertyOptional({
+    example: false,
+    deprecated: true,
     description:
-      'Resultado de la verificación manual de la firma digital del profesional en el PDF adjunto. ' +
-      'Si es false, se genera una alerta informativa en el historial pero el expediente puede avanzar.',
+      'Compatibilidad con clientes anteriores. El backend calcula este valor automáticamente ' +
+      'a partir de la integridad de la firma y la coincidencia de identidad.',
   })
   @IsBoolean()
-  signature_validated: boolean;
+  @IsOptional()
+  signature_validated?: boolean;
+
+  @ApiPropertyOptional({
+    example: true,
+    description:
+      'Confirmación explícita para continuar cuando no existe una firma íntegra que coincida ' +
+      'con la persona esperada. No cambia el resultado automático.',
+  })
+  @IsBoolean()
+  @IsOptional()
+  acknowledge_signature_warning?: boolean;
 
   /**
    * Decisión final de la secretaría:
@@ -37,7 +45,7 @@ export class SecretaryReviewDto {
   approved: boolean;
 
   @ApiPropertyOptional({
-    example: 'Documentación completa. Firma validada. Se remite a inspección técnica.',
+    example: 'Documentación completa. Identidad verificada. Se remite a inspección técnica.',
     description: 'Observaciones o motivo del rechazo.',
   })
   @IsString()

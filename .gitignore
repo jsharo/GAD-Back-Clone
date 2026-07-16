@@ -16,6 +16,7 @@ typechain-types/
 typechain/
 coverage/
 coverage.json
+.venv-signatures/
 
 # Archivos subidos
 uploads/
