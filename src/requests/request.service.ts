@@ -24,6 +24,12 @@ import { Role } from '../common/enums/role.enum';
 import { PropertyZone, RequestType } from '@prisma/client';
 import { IpfsService } from '../ipfs/ipfs.service';
 import { BlockchainService } from '../blockchain/blockchain.service';
+import { DocumentSignatureService } from '../signatures/document-signature.service';
+import {
+  AttachmentSignatureReport,
+  ExpectedSigner,
+  RequestSignatureSummary,
+} from '../signatures/signature-verification.types';
 import {
   createSafeInspectionStorageLocation,
   createSafeStorageLocation,
@@ -39,6 +45,7 @@ export class RequestService {
     private readonly fee_rules_service: FeeRulesService,
     private readonly ipfs_service: IpfsService,
     private readonly blockchain_service: BlockchainService,
+    private readonly document_signature_service: DocumentSignatureService,
   ) {}
 
   private writeDocumentFile(file_path: string, buffer: Buffer) {
@@ -301,10 +308,10 @@ export class RequestService {
       where: { id },
       include: {
         citizen: {
-          select: { id: true, email: true, name: true, lastname: true },
+          select: { id: true, email: true, name: true, lastname: true, cedula: true },
         },
         architect: {
-          select: { id: true, email: true, name: true, lastname: true },
+          select: { id: true, email: true, name: true, lastname: true, cedula: true },
         },
         property: true,
         attachments: { orderBy: [{ folder: 'asc' }, { created_at: 'asc' }] },
@@ -522,17 +529,30 @@ export class RequestService {
       );
     }
 
-    // ── Alerta de firma (NO bloqueante) ─────────────────────────────────────
-    // Si la firma no fue validada, se registra una alerta informativa
-    // pero el flujo continúa normalmente.
-    if (review_dto.approved && !review_dto.signature_validated) {
+    const signature_summary = await this.collectRequestSignatureSummary(id, false);
+    const signature_validated = signature_summary.has_valid_expected_signature;
+    const signature_requires_acknowledgement =
+      signature_summary.requires_acknowledgement ?? signature_summary.status !== 'MATCH';
+
+    if (
+      review_dto.approved &&
+      signature_requires_acknowledgement &&
+      !review_dto.acknowledge_signature_warning
+    ) {
+      throw new BadRequestException(
+        'La verificación de firmas contiene diferencias, incertidumbres o alertas de confianza. ' +
+          'Revise el detalle y confirme explícitamente si desea continuar.',
+      );
+    }
+
+    if (review_dto.approved && signature_requires_acknowledgement) {
       await this.prisma.requestHistory.create({
         data: {
           previous_status: request.status,
           new_status: request.status,
           comment:
-            'ALERTA: La secretaria aprobó el expediente SIN validar la firma digital del profesional. ' +
-            'Se recomienda verificar la autenticidad del documento.',
+            'ALERTA DE FIRMA: La secretaría aprobó el expediente después de reconocer ' +
+            `advertencias del verificador. Estado automático: ${signature_summary.status}.`,
           responsible: 'SISTEMA',
           request_id: id,
         },
@@ -551,9 +571,10 @@ export class RequestService {
     } else {
       new_status = RequestStatus.PENDING_TECHNICIAN;
       history_comment =
-        (review_dto.signature_validated
-          ? `Firma validada y expediente aprobado por la secretaría. `
-          : `Expediente aprobado por la secretaría con firma no validada; se registró alerta informativa. `) +
+        (!signature_requires_acknowledgement
+          ? `Firma, identidad y confianza verificadas automáticamente; expediente aprobado por la secretaría. `
+          : `Expediente aprobado con alerta automática de firma (${signature_summary.status}); ` +
+            `la secretaría confirmó que desea continuar. `) +
         `Se remite a revisión técnica. ` +
         (review_dto.remarks ? review_dto.remarks : '');
     }
@@ -564,14 +585,14 @@ export class RequestService {
       create: {
         approved: review_dto.approved,
         remarks: review_dto.remarks || null,
-        signature_validated: review_dto.signature_validated,
+        signature_validated,
         request_id: id,
         secretary_id: active_user.id,
       },
       update: {
         approved: review_dto.approved,
         remarks: review_dto.remarks || null,
-        signature_validated: review_dto.signature_validated,
+        signature_validated,
         secretary_id: active_user.id,
       },
     });
@@ -596,13 +617,17 @@ export class RequestService {
       active_user.id,
       active_user.email,
       'SECRETARY_REVIEW',
-      `Revisión de secretaría: aprobado=${review_dto.approved}, firma_validada=${review_dto.signature_validated}, nuevo estado=${new_status}`,
+      `Revisión de secretaría del expediente ${id}: aprobado=${review_dto.approved}, ` +
+        `firma_validada=${signature_validated}, estado_firmas=${signature_summary.status}, ` +
+        `firmante_esperado_id=${request.architect_id ?? request.citizen_id ?? 'NO_DEFINIDO'}, ` +
+        `nuevo estado=${new_status}`,
     );
 
     return {
       id,
       status: new_status,
-      signature_validated: review_dto.signature_validated,
+      signature_validated,
+      signature_status: signature_summary.status,
       approved: review_dto.approved,
     };
   }
@@ -927,6 +952,212 @@ export class RequestService {
       orderBy: [{ folder: 'asc' }, { created_at: 'asc' }],
     });
     return attachments.map((attachment) => this.toPublicAttachment(attachment));
+  }
+
+  private isPdfAttachment(attachment: any) {
+    return (
+      attachment?.type === 'application/pdf' ||
+      String(attachment?.name || '').toLowerCase().endsWith('.pdf')
+    );
+  }
+
+  private async getExpectedSigner(request_id: string): Promise<ExpectedSigner> {
+    const request = await this.prisma.request.findUnique({
+      where: { id: request_id },
+      select: {
+        citizen: { select: { id: true, name: true, lastname: true, cedula: true } },
+        architect: { select: { id: true, name: true, lastname: true, cedula: true } },
+      },
+    });
+    if (!request) throw new NotFoundException('Solicitud no encontrada.');
+
+    const signer = request.architect || request.citizen;
+    return {
+      id: signer?.id || null,
+      role: request.architect ? 'PROFESSIONAL' : request.citizen ? 'CITIZEN' : 'UNKNOWN',
+      full_name: [signer?.name, signer?.lastname].filter(Boolean).join(' '),
+      national_id: signer?.cedula || null,
+    };
+  }
+
+  private async verifyPdfAttachmentRecord(
+    attachment: any,
+    expected_signer: ExpectedSigner,
+    refresh: boolean,
+  ): Promise<AttachmentSignatureReport> {
+    const file = this.resolveAttachmentFile(attachment);
+    const current_hash = this.hashStoredDocument(file.file_path);
+    const storage_integrity_valid = !attachment.hash || attachment.hash === current_hash;
+    const cached_report = attachment.signature_report as AttachmentSignatureReport | null;
+
+    if (
+      !refresh &&
+      cached_report?.document_hash === current_hash &&
+      cached_report?.expected_signer?.national_id === expected_signer.national_id
+    ) {
+      return cached_report;
+    }
+
+    const report = await this.document_signature_service.verifyPdf(
+      file.file_path,
+      current_hash,
+      expected_signer,
+    );
+    const effective_report: AttachmentSignatureReport = {
+      ...report,
+      status: storage_integrity_valid ? report.status : 'INVALID',
+      has_valid_expected_signature:
+        storage_integrity_valid && report.has_valid_expected_signature,
+      warnings: storage_integrity_valid
+        ? report.warnings
+        : [
+            ...report.warnings,
+            'El contenido actual no coincide con el hash almacenado al cargar el adjunto.',
+          ],
+      attachment_id: attachment.id,
+      attachment_name: attachment.name,
+      stored_hash: attachment.hash || null,
+      storage_integrity_valid,
+    };
+
+    await this.prisma.attachment.update({
+      where: { id: attachment.id },
+      data: {
+        signature_status: effective_report.status,
+        signature_report: effective_report as any,
+        signature_verified_at: new Date(effective_report.verified_at),
+        signature_verifier: effective_report.verifier,
+      },
+    });
+
+    return effective_report;
+  }
+
+  private async verifyPdfAttachmentSafely(
+    attachment: any,
+    expected_signer: ExpectedSigner,
+    refresh: boolean,
+  ): Promise<AttachmentSignatureReport> {
+    try {
+      return await this.verifyPdfAttachmentRecord(
+        attachment,
+        expected_signer,
+        refresh,
+      );
+    } catch {
+      const verified_at = new Date().toISOString();
+      const report: AttachmentSignatureReport = {
+        schema_version: 1,
+        document_hash: attachment.hash || '',
+        verified_at,
+        verifier: 'unavailable',
+        status: 'ERROR',
+        engine_status: 'ERROR',
+        engine_error_code: 'ATTACHMENT_READ_ERROR',
+        trust_configured: false,
+        network_validation_enabled: false,
+        signature_count: 0,
+        has_valid_expected_signature: false,
+        expected_signer,
+        signatures: [],
+        warnings: [
+          'No se pudo leer el archivo almacenado para verificar sus firmas.',
+        ],
+        attachment_id: attachment.id,
+        attachment_name: attachment.name,
+        stored_hash: attachment.hash || null,
+        storage_integrity_valid: false,
+      };
+
+      await this.prisma.attachment.update({
+        where: { id: attachment.id },
+        data: {
+          signature_status: report.status,
+          signature_report: report as any,
+          signature_verified_at: new Date(verified_at),
+          signature_verifier: report.verifier,
+        },
+      });
+      return report;
+    }
+  }
+
+  private async collectRequestSignatureSummary(
+    id: string,
+    refresh: boolean,
+  ): Promise<RequestSignatureSummary> {
+    const expected_signer = await this.getExpectedSigner(id);
+    const attachments = await this.prisma.attachment.findMany({
+      where: { request_id: id },
+      orderBy: { created_at: 'asc' },
+    });
+    const reports: AttachmentSignatureReport[] = [];
+
+    for (const attachment of attachments.filter((item) => this.isPdfAttachment(item))) {
+      reports.push(
+        await this.verifyPdfAttachmentSafely(attachment, expected_signer, refresh),
+      );
+    }
+
+    return this.document_signature_service.buildRequestSummary(reports, expected_signer);
+  }
+
+  async verifyRequestSignatures(id: string, active_user: any, refresh = false) {
+    await this.validateRequestAccess(id, active_user);
+    const summary = await this.collectRequestSignatureSummary(id, refresh);
+
+    await this.audit_service.logAction(
+      active_user.id,
+      active_user.email,
+      'VERIFY_REQUEST_SIGNATURES',
+      JSON.stringify({
+        requestId: id,
+        status: summary.status,
+        pdfCount: summary.pdf_count,
+        signatureCount: summary.signature_count,
+        hasExpectedSigner: summary.has_valid_expected_signature,
+      }),
+    );
+
+    return summary;
+  }
+
+  async verifyAttachmentSignatures(
+    id: string,
+    attachment_id: string,
+    active_user: any,
+    refresh = false,
+  ) {
+    await this.validateRequestAccess(id, active_user);
+    const attachment = await this.prisma.attachment.findFirst({
+      where: { id: attachment_id, request_id: id },
+    });
+    if (!attachment) {
+      throw new NotFoundException('Adjunto no encontrado en este expediente.');
+    }
+    if (!this.isPdfAttachment(attachment)) {
+      throw new BadRequestException('La verificación de firmas solo admite documentos PDF.');
+    }
+
+    const expected_signer = await this.getExpectedSigner(id);
+    const report = await this.verifyPdfAttachmentSafely(
+      attachment,
+      expected_signer,
+      refresh,
+    );
+    await this.audit_service.logAction(
+      active_user.id,
+      active_user.email,
+      'VERIFY_ATTACHMENT_SIGNATURES',
+      JSON.stringify({
+        requestId: id,
+        attachmentId: attachment.id,
+        status: report.status,
+        signatureCount: report.signature_count,
+        hasExpectedSigner: report.has_valid_expected_signature,
+      }),
+    );
+    return report;
   }
 
   private resolveAttachmentStoragePath(attachment: any) {

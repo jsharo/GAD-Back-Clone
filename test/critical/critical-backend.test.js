@@ -38,20 +38,31 @@ function restoreEnvironment(snapshot) {
   }
 }
 
-function makeRequestService({ request, attachment, prisma = {}, audit_events = [] } = {}) {
+function makeRequestService({
+  request,
+  attachment,
+  prisma = {},
+  audit_events = [],
+  signature_summary,
+} = {}) {
   const db = {
     request: { findUnique: async () => request || makeRequest() },
     attachment: { findFirst: async () => attachment },
     auditLog: { findMany: async () => [] },
     ...prisma,
   };
-  return new RequestService(
+  const service = new RequestService(
     db,
     { logAction: async (...event) => audit_events.push(event) },
     {},
     {},
     {},
+    {},
   );
+  if (signature_summary) {
+    service.collectRequestSignatureSummary = async () => signature_summary;
+  }
+  return service;
 }
 
 describe('critical backend regression suite', () => {
@@ -201,6 +212,36 @@ describe('critical backend regression suite', () => {
       );
     });
 
+    test('includes national IDs for the expected signer in an authorized detail', async () => {
+      const request = makeRequest();
+      const detail = {
+        ...request,
+        citizen: { id: request.citizen_id, cedula: '0102030405' },
+        architect: { id: request.architect_id, cedula: '1717171717' },
+      };
+      const queries = [];
+      const service = makeRequestService({
+        request,
+        prisma: {
+          request: {
+            findUnique: async (query) => {
+              queries.push(query);
+              return query.include ? detail : request;
+            },
+          },
+        },
+      });
+
+      const result = await service.findOne(
+        request.id,
+        makeUser({ role: 'SECRETARY' }),
+      );
+
+      assert.equal(result.citizen.cedula, '0102030405');
+      assert.equal(queries[1].include.citizen.select.cedula, true);
+      assert.equal(queries[1].include.architect.select.cedula, true);
+    });
+
     test('builds the traceability structure without exposing attachment URLs', async () => {
       const stored = makeStoredAttachment({ hash: null });
       const request = makeRequest({
@@ -235,6 +276,122 @@ describe('critical backend regression suite', () => {
       } finally {
         stored.cleanup();
       }
+    });
+
+    test('requires acknowledgement to approve without an identity match and records the alert', async () => {
+      const request = makeRequest({ status: 'PENDING_SECRETARY' });
+      const histories = [];
+      const decisions = [];
+      const status_updates = [];
+      const audit_events = [];
+      const prisma = {
+        request: {
+          findUnique: async () => request,
+          update: async ({ data }) => {
+            status_updates.push(data.status);
+            return { ...request, ...data };
+          },
+        },
+        requestHistory: {
+          create: async ({ data }) => {
+            histories.push(data);
+            return data;
+          },
+        },
+        secretaryDecision: {
+          upsert: async (input) => {
+            decisions.push(input);
+            return input.create;
+          },
+        },
+      };
+      const service = makeRequestService({
+        request,
+        prisma,
+        audit_events,
+        signature_summary: {
+          status: 'MISMATCH',
+          has_valid_expected_signature: false,
+        },
+      });
+      const secretary = makeUser({
+        id: 'critical-secretary',
+        email: 'secretary@example.test',
+        role: 'SECRETARY',
+      });
+
+      await assert.rejects(
+        () =>
+          service.secretaryReview(
+            request.id,
+            { approved: true, signature_validated: true },
+            secretary,
+          ),
+        /confirme explícitamente/i,
+      );
+
+      const result = await service.secretaryReview(
+        request.id,
+        {
+          approved: true,
+          signature_validated: true,
+          acknowledge_signature_warning: true,
+          remarks: 'Synthetic non-blocking review',
+        },
+        secretary,
+      );
+
+      assert.equal(result.status, 'PENDING_TECHNICIAN');
+      assert.equal(result.signature_validated, false);
+      assert.equal(result.signature_status, 'MISMATCH');
+      assert.deepEqual(status_updates, ['PENDING_TECHNICIAN']);
+      assert.equal(decisions[0].create.signature_validated, false);
+      assert.equal(histories.length, 2);
+      assert.match(histories[0].comment, /ALERTA/i);
+      assert.equal(histories[0].new_status, 'PENDING_SECRETARY');
+      assert.equal(histories[1].new_status, 'PENDING_TECHNICIAN');
+      assert.match(histories[1].comment, /alerta automática de firma/i);
+      assert.equal(audit_events.length, 1);
+      assert.match(audit_events[0][3], /firma_validada=false/);
+      assert.match(audit_events[0][3], new RegExp(request.id));
+    });
+
+    test('derives a valid signature from the automatic report instead of the client flag', async () => {
+      const request = makeRequest({ status: 'PENDING_SECRETARY' });
+      const histories = [];
+      const prisma = {
+        request: {
+          findUnique: async () => request,
+          update: async ({ data }) => ({ ...request, ...data }),
+        },
+        requestHistory: {
+          create: async ({ data }) => {
+            histories.push(data);
+            return data;
+          },
+        },
+        secretaryDecision: { upsert: async ({ create }) => create },
+      };
+      const service = makeRequestService({
+        request,
+        prisma,
+        signature_summary: {
+          status: 'MATCH',
+          has_valid_expected_signature: true,
+        },
+      });
+
+      const result = await service.secretaryReview(
+        request.id,
+        { approved: true, signature_validated: false },
+        makeUser({ role: 'SECRETARY' }),
+      );
+
+      assert.equal(result.status, 'PENDING_TECHNICIAN');
+      assert.equal(result.signature_validated, true);
+      assert.equal(result.signature_status, 'MATCH');
+      assert.equal(histories.length, 1);
+      assert.doesNotMatch(histories[0].comment, /ALERTA/i);
     });
   });
 

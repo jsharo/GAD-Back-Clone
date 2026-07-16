@@ -124,6 +124,28 @@ export class RequestController {
     return { success: true, data };
   }
 
+  @Get(':id/signature-verification')
+  @Roles(Role.SECRETARY, Role.ADMINISTRATOR)
+  @ApiOperation({
+    summary: 'Verificar firmas PDF e identidad esperada en todos los adjuntos',
+    description:
+      'Extrae cada firma y certificado, comprueba integridad criptográfica y compara la ' +
+      'cédula disponible en el certificado con la persona responsable del expediente.',
+  })
+  @ApiQuery({ name: 'refresh', required: false, type: Boolean })
+  async verifyRequestSignatures(
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @Query('refresh') refresh?: string,
+  ) {
+    const data = await this.request_service.verifyRequestSignatures(
+      id,
+      user,
+      refresh === 'true',
+    );
+    return { success: true, data };
+  }
+
   @Get(':id')
   @Roles(
     Role.CITIZEN,
@@ -379,6 +401,27 @@ export class RequestController {
       attachment_id,
       user,
     );
+  }
+
+  @Get(':id/attachments/:attachmentId/signatures')
+  @Roles(Role.SECRETARY, Role.ADMINISTRATOR)
+  @ApiOperation({
+    summary: 'Extraer y verificar todas las firmas de un PDF del expediente',
+  })
+  @ApiQuery({ name: 'refresh', required: false, type: Boolean })
+  async verifyAttachmentSignatures(
+    @Param('id') id: string,
+    @Param('attachmentId') attachment_id: string,
+    @CurrentUser() user: any,
+    @Query('refresh') refresh?: string,
+  ) {
+    const data = await this.request_service.verifyAttachmentSignatures(
+      id,
+      attachment_id,
+      user,
+      refresh === 'true',
+    );
+    return { success: true, data };
   }
 
   @Post(':id/attachments/:attachmentId/ipfs')

@@ -239,6 +239,10 @@ model Attachment {
   blockchain_network          String?
   blockchain_contract_address String?
   blockchain_evidence_id      String?
+  signature_status            String    @default("PENDING")
+  signature_report            Json?
+  signature_verified_at       DateTime?
+  signature_verifier          String?
 
   request_id String
   request    Request @relation(fields: [request_id], references: [id], onDelete: Cascade)
