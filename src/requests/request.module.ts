@@ -5,7 +5,7 @@ import { FeeRulesService } from './fee-rules.service';
 import { AuditModule } from '../audit/audit.module';
 import { IpfsModule } from '../ipfs/ipfs.module';
 import { BlockchainModule } from '../blockchain/blockchain.module';
-import { DocumentSignatureModule } from '../signatures/document-signature.module';
+import { DocumentSignatureModule } from '../signatures/document.signature.module';
 
 @Module({
   imports: [AuditModule, IpfsModule, BlockchainModule, DocumentSignatureModule],

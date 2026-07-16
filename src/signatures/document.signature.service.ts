@@ -13,7 +13,7 @@ import {
   SignatureTrustStatus,
   SignatureVerificationStatus,
   VerifiedPdfSignature,
-} from './signature-verification.types';
+} from './signature.verification.types';
 
 @Injectable()
 export class DocumentSignatureService {
@@ -131,7 +131,7 @@ export class DocumentSignatureService {
     const script_path = path.resolve(
       process.cwd(),
       'signature-verifier',
-      'verify_pdf.py',
+      'verify.pdf.py',
     );
     if (!fs.existsSync(script_path)) {
       return Promise.resolve({
