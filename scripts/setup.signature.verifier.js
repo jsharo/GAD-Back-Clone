@@ -2,17 +2,17 @@ const { existsSync, readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const backendRoot = join(__dirname, '..');
-const venvRoot = join(backendRoot, '.venv-signatures');
-const venvPython =
+const backend_root = join(__dirname, '..');
+const venv_root = join(backend_root, '.venv-signatures');
+const venv_python =
   process.platform === 'win32'
-    ? join(venvRoot, 'Scripts', 'python.exe')
-    : join(venvRoot, 'bin', 'python');
-const requirements = join(backendRoot, 'signature-verifier', 'requirements.txt');
+    ? join(venv_root, 'Scripts', 'python.exe')
+    : join(venv_root, 'bin', 'python');
+const requirements_path = join(backend_root, 'signature-verifier', 'requirements.txt');
 
 function run(executable, args) {
   const result = spawnSync(executable, args, {
-    cwd: backendRoot,
+    cwd: backend_root,
     env: process.env,
     stdio: 'inherit',
     shell: false,
@@ -26,7 +26,7 @@ function installedVersion(executable) {
     executable,
     ['-c', 'import importlib.metadata; print(importlib.metadata.version("pyHanko"))'],
     {
-      cwd: backendRoot,
+      cwd: backend_root,
       env: process.env,
       encoding: 'utf8',
       shell: false,
@@ -51,23 +51,32 @@ function findPython() {
   throw new Error('No se encontro Python 3. Configure PYTHON y vuelva a intentarlo.');
 }
 
-if (!existsSync(venvPython)) {
+if (!existsSync(venv_python)) {
   const python = findPython();
-  if (!run(python.executable, [...python.prefix, '-m', 'venv', venvRoot])) {
+  if (!run(python.executable, [...python.prefix, '-m', 'venv', venv_root])) {
     throw new Error('No se pudo crear .venv-signatures.');
   }
 }
 
-const requirementsText = readFileSync(requirements, 'utf8');
-const requiredVersion = requirementsText.match(/pyHanko(?:\[[^\]]+\])?==([^\s]+)/i)?.[1];
-if (!requiredVersion) {
+const requirements_text = readFileSync(requirements_path, 'utf8');
+const required_version = requirements_text.match(/pyHanko(?:\[[^\]]+\])?==([^\s]+)/i)?.[1];
+if (!required_version) {
   throw new Error('requirements.txt no fija una version de pyHanko.');
 }
 
-if (installedVersion(venvPython) !== requiredVersion) {
-  if (!run(venvPython, ['-m', 'pip', 'install', '--disable-pip-version-check', '-r', requirements])) {
+if (installedVersion(venv_python) !== required_version) {
+  if (
+    !run(venv_python, [
+      '-m',
+      'pip',
+      'install',
+      '--disable-pip-version-check',
+      '-r',
+      requirements_path,
+    ])
+  ) {
     throw new Error('No se pudieron instalar las dependencias del verificador de firmas.');
   }
 }
 
-console.log(`Verificador de firmas listo: pyHanko ${requiredVersion}`);
+console.log(`Verificador de firmas listo: pyHanko ${required_version}`);

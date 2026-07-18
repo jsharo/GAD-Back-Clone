@@ -24,12 +24,12 @@ import { Role } from '../common/enums/role.enum';
 import { PropertyZone, RequestType } from '@prisma/client';
 import { IpfsService } from '../ipfs/ipfs.service';
 import { BlockchainService } from '../blockchain/blockchain.service';
-import { DocumentSignatureService } from '../signatures/document-signature.service';
+import { DocumentSignatureService } from '../signatures/document.signature.service';
 import {
   AttachmentSignatureReport,
   ExpectedSigner,
   RequestSignatureSummary,
-} from '../signatures/signature-verification.types';
+} from '../signatures/signature.verification.types';
 import {
   createSafeInspectionStorageLocation,
   createSafeStorageLocation,
