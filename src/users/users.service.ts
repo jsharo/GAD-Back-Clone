@@ -3,6 +3,8 @@ import {
   NotFoundException,
   ConflictException,
   UnauthorizedException,
+  BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -11,8 +13,10 @@ import { AuditService } from '../audit/audit.service';
 import { RolesService } from '../roles/roles.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateOwnProfileDto } from './dto/update-own-profile.dto';
 import { Role } from '../common/enums/role.enum';
 import { USER_PUBLIC_SELECT } from './constants/user.select';
+import { isValidEcuadorianCedula } from '../common/utils/cedula.util';
 
 const PASSWORD_SALT_ROUNDS = 12;
 
@@ -60,6 +64,12 @@ export class UsersService {
         password: true,
         status: true,
         emailVerified: true,
+        name: true,
+        lastname: true,
+        cedula: true,
+        senescytCode: true,
+        professionalStatus: true,
+        createdAt: true,
       },
     });
 
@@ -72,11 +82,8 @@ export class UsersService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    return {
-      id: user.id,
-      email: user.email,
-      emailVerified: user.emailVerified,
-    };
+    const { password: _password, ...safeUser } = user;
+    return safeUser;
   }
 
   async findById(id: string) {
@@ -176,6 +183,58 @@ export class UsersService {
     });
   }
 
+  async updateOwnProfile(
+    userId: string,
+    dto: UpdateOwnProfileDto,
+    actor: { id: string; email: string },
+  ) {
+    const existing = await this.findById(userId);
+    const role = await this.rolesService.getUserRoleName(userId);
+
+    if (role === Role.USER) {
+      if (existing.professionalStatus !== 'VERIFIED') {
+        throw new ForbiddenException(
+          'Solo puedes editar tu perfil después de que Secretaría apruebe tu habilitación profesional.',
+        );
+      }
+    }
+
+    if (dto.cedula) {
+      const cedula = dto.cedula.trim();
+      if (!isValidEcuadorianCedula(cedula)) {
+        throw new BadRequestException(
+          'La cédula no es válida. Debe ser un número de identidad ecuatoriano real.',
+        );
+      }
+      await this.assertUniqueCedula(cedula, userId);
+    }
+
+    const data: { name?: string; lastname?: string; cedula?: string } = {};
+    if (dto.name !== undefined) data.name = dto.name.trim();
+    if (dto.lastname !== undefined) data.lastname = dto.lastname.trim();
+    if (dto.cedula !== undefined) data.cedula = dto.cedula.trim();
+
+    if (Object.keys(data).length === 0) {
+      const user = await this.findById(userId);
+      return this.presentUser(user);
+    }
+
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data,
+      select: USER_PUBLIC_SELECT,
+    });
+
+    await this.auditService.logAction(
+      actor.id,
+      actor.email,
+      'UPDATE_OWN_PROFILE',
+      `User ${user.email} updated own profile`,
+    );
+
+    return this.presentUser(user);
+  }
+
   async update(id: string, dto: UpdateUserDto, actor: { id: string; email: string }) {
     await this.findById(id);
 
@@ -233,6 +292,11 @@ export class UsersService {
     );
 
     return this.presentUser(user);
+  }
+
+  /** Hard delete for failed registration rollback (frees email/cedula). */
+  async hardDelete(id: string): Promise<void> {
+    await this.prisma.user.delete({ where: { id } });
   }
 
   async softDelete(id: string, actor: { id: string; email: string }) {

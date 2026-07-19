@@ -25,6 +25,8 @@ import { PropertyZone, RequestType } from '@prisma/client';
 import { IpfsService } from '../ipfs/ipfs.service';
 import { BlockchainService } from '../blockchain/blockchain.service';
 import { DocumentSignatureService } from '../signatures/document.signature.service';
+import { SignatureProfileService } from '../signatures/signature.profile.service';
+import { ProfessionalVerificationService } from '../users/professional-verification.service';
 import {
   AttachmentSignatureReport,
   ExpectedSigner,
@@ -46,6 +48,8 @@ export class RequestService {
     private readonly ipfs_service: IpfsService,
     private readonly blockchain_service: BlockchainService,
     private readonly document_signature_service: DocumentSignatureService,
+    private readonly signature_profile_service: SignatureProfileService,
+    private readonly professionalVerification: ProfessionalVerificationService,
   ) {}
 
   private writeDocumentFile(file_path: string, buffer: Buffer) {
@@ -173,6 +177,8 @@ export class RequestService {
     let architect_id: string | null = null;
 
     if (acting_role === Role.USER) {
+      await this.professionalVerification.assertCanCreateProcedures(active_user.id);
+
       if (!create_dto.citizen_id) {
         throw new BadRequestException(
           'El profesional habilitado debe especificar el "citizen_id" del propietario del predio.',
@@ -937,6 +943,33 @@ export class RequestService {
       `Documento "${attachment.name}" cargado en carpeta ${dto.folder} del expediente ${id}, sha256=${hash.substring(0, 16)}...`,
     );
 
+    // Si el arquitecto sube un PDF firmado, verificar y capturar su certificado
+    if (
+      this.isPdfAttachment(attachment) &&
+      access_context.architect_id === active_user.id
+    ) {
+      try {
+        const expected_signer = await this.getExpectedSigner(id);
+        const report = await this.verifyPdfAttachmentRecord(
+          attachment,
+          expected_signer,
+          true,
+        );
+        return {
+          ...this.toPublicAttachment({
+            ...attachment,
+            signature_status: report.status,
+            signature_report: report,
+            signature_verified_at: new Date(report.verified_at),
+            signature_verifier: report.verifier,
+          }),
+          signature_profile_captured: report.has_valid_expected_signature,
+        };
+      } catch {
+        // La subida ya fue exitosa; la verificación puede reintentarse después
+      }
+    }
+
     return this.toPublicAttachment(attachment);
   }
 
@@ -1029,6 +1062,16 @@ export class RequestService {
         signature_verifier: effective_report.verifier,
       },
     });
+
+    try {
+      await this.signature_profile_service.captureFromVerifiedReport(
+        expected_signer,
+        effective_report,
+        attachment.id,
+      );
+    } catch {
+      // No bloquear la verificación del adjunto si falla el anclaje del perfil
+    }
 
     return effective_report;
   }

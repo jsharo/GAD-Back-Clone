@@ -2,16 +2,25 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmailService } from '../email/email.service';
 import * as bcrypt from 'bcrypt';
 
 const CODE_TTL_MS = 15 * 60 * 1000;
+const RESEND_COOLDOWN_MS = 15 * 1000;
 const VERIFICATION_CODE_SALT_ROUNDS = 12;
 
 @Injectable()
 export class VerificationService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly lastResendByEmail = new Map<string, number>();
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly emailService: EmailService,
+  ) {}
 
   private generateNumericCode(length = 6): string {
     const max = 10 ** length;
@@ -31,6 +40,65 @@ export class VerificationService {
     });
 
     return code;
+  }
+
+  async sendVerificationEmail(email: string, code: string): Promise<void> {
+    const subject = 'Verifica tu correo — GAD Cañar';
+    const text = `Tu código de verificación es: ${code}. Expira en 15 minutos.`;
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px">
+        <h2 style="color:#1e3a5f;margin:0 0 16px">GAD Municipal de Cañar</h2>
+        <p style="color:#334155;line-height:1.5">Usa este código para verificar tu correo electrónico:</p>
+        <p style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#1e3a5f;margin:24px 0">${code}</p>
+        <p style="color:#64748b;font-size:14px">El código expira en 15 minutos. Si no solicitaste este registro, ignora este mensaje.</p>
+      </div>
+    `;
+
+    await this.emailService.send({ to: email, subject, text, html });
+  }
+
+  async resendVerificationEmail(email: string) {
+    const normalized = email.trim().toLowerCase();
+    const now = Date.now();
+    const lastSent = this.lastResendByEmail.get(normalized) ?? 0;
+    const remainingMs = RESEND_COOLDOWN_MS - (now - lastSent);
+
+    if (remainingMs > 0) {
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          message: `Wait ${Math.ceil(remainingMs / 1000)} seconds before requesting another code.`,
+          retryAfterSeconds: Math.ceil(remainingMs / 1000),
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: { email: normalized, deletedAt: null },
+      select: {
+        id: true,
+        email: true,
+        emailVerified: true,
+        status: true,
+      },
+    });
+
+    // Same generic response whether user exists or not (no enumeration)
+    if (!user || user.emailVerified || user.status !== 'ACTIVE') {
+      this.lastResendByEmail.set(normalized, now);
+      return {
+        message: 'If the account needs verification, a new code was sent.',
+      };
+    }
+
+    const code = await this.createVerificationCode(user.id);
+    await this.sendVerificationEmail(user.email, code);
+    this.lastResendByEmail.set(normalized, now);
+
+    return {
+      message: 'If the account needs verification, a new code was sent.',
+    };
   }
 
   async validateCode(email: string, code: string): Promise<{ userId: string }> {
