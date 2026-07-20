@@ -3,14 +3,15 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
+/** Matches Prisma enum ProfessionalStatus */
+type ProfessionalStatusValue = 'UNVERIFIED' | 'PENDING' | 'VERIFIED' | 'REJECTED';
+
 const PERMISSIONS = [
   { name: 'users.read', description: 'View users' },
   { name: 'users.write', description: 'Create and update users' },
-
   { name: 'requests.read', description: 'View requests' },
   { name: 'requests.write', description: 'Create and update requests' },
   { name: 'requests.review', description: 'Review requests' },
-
   { name: 'audit.read', description: 'View audit logs' },
 ];
 
@@ -32,25 +33,25 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'requests.review',
     'audit.read',
   ],
-
-  SECRETARY: [
-    'users.read',
-    'requests.read',
-    'requests.review',
-  ],
-
-  TECHNICIAN: [
-    'requests.read',
-    'requests.review',
-  ],
-
+  SECRETARY: ['users.read', 'requests.read', 'requests.review'],
+  TECHNICIAN: ['requests.read', 'requests.review'],
   USER: ['requests.read', 'requests.write'],
-
   CITIZEN: ['requests.read', 'requests.write'],
   FINANCIAL: ['requests.read', 'requests.review'],
 };
 
-const DEMO_USERS = [
+type DemoUser = {
+  role: string;
+  email: string;
+  password: string;
+  name: string;
+  lastname: string;
+  cedula: string;
+  senescytCode?: string;
+  professionalStatus?: ProfessionalStatusValue;
+};
+
+const DEMO_USERS: DemoUser[] = [
   {
     role: 'ADMINISTRATOR',
     email: 'admin@gadcanar.gob.ec',
@@ -90,6 +91,8 @@ const DEMO_USERS = [
     name: 'Arquitecto',
     lastname: 'Demo',
     cedula: '0100000004',
+    senescytCode: '650211A01',
+    professionalStatus: 'VERIFIED',
   },
   {
     role: 'CITIZEN',
@@ -106,12 +109,8 @@ async function seedPermissions() {
 
   for (const permission of PERMISSIONS) {
     await prisma.permission.upsert({
-      where: {
-        name: permission.name,
-      },
-      update: {
-        description: permission.description,
-      },
+      where: { name: permission.name },
+      update: { description: permission.description },
       create: {
         name: permission.name,
         description: permission.description,
@@ -125,12 +124,8 @@ async function seedRoles() {
 
   for (const role of ROLES) {
     await prisma.role.upsert({
-      where: {
-        name: role.name,
-      },
-      update: {
-        description: role.description,
-      },
+      where: { name: role.name },
+      update: { description: role.description },
       create: {
         name: role.name,
         description: role.description,
@@ -142,24 +137,14 @@ async function seedRoles() {
 async function seedRolePermissions() {
   console.log('Seeding role permissions...');
 
-  for (const [roleName, permissionNames] of Object.entries(
-    ROLE_PERMISSIONS,
-  )) {
-    const role = await prisma.role.findUnique({
-      where: {
-        name: roleName,
-      },
-    });
-
+  for (const [roleName, permissionNames] of Object.entries(ROLE_PERMISSIONS)) {
+    const role = await prisma.role.findUnique({ where: { name: roleName } });
     if (!role) continue;
 
     for (const permissionName of permissionNames) {
       const permission = await prisma.permission.findUnique({
-        where: {
-          name: permissionName,
-        },
+        where: { name: permissionName },
       });
-
       if (!permission) continue;
 
       await prisma.rolePermission.upsert({
@@ -179,14 +164,12 @@ async function seedRolePermissions() {
   }
 }
 
-async function seedAdminUser() {
+async function seedDemoUsers() {
   console.log('Seeding demo users...');
 
   for (const demoUser of DEMO_USERS) {
     const role = await prisma.role.findUnique({
-      where: {
-        name: demoUser.role,
-      },
+      where: { name: demoUser.role },
     });
 
     if (!role) {
@@ -194,11 +177,11 @@ async function seedAdminUser() {
     }
 
     const passwordHash = await bcrypt.hash(demoUser.password, 10);
+    const professionalStatus: ProfessionalStatusValue =
+      demoUser.professionalStatus ?? 'UNVERIFIED';
 
     const user = await prisma.user.upsert({
-      where: {
-        email: demoUser.email,
-      },
+      where: { email: demoUser.email },
       update: {
         name: demoUser.name,
         lastname: demoUser.lastname,
@@ -207,6 +190,8 @@ async function seedAdminUser() {
         emailVerified: true,
         verificationCode: null,
         verificationExpiry: null,
+        senescytCode: demoUser.senescytCode ?? null,
+        professionalStatus,
       },
       create: {
         name: demoUser.name,
@@ -216,16 +201,14 @@ async function seedAdminUser() {
         password: passwordHash,
         status: UserStatus.ACTIVE,
         emailVerified: true,
+        senescytCode: demoUser.senescytCode ?? null,
+        professionalStatus,
       },
     });
 
     await prisma.userRole.upsert({
-      where: {
-        userId: user.id,
-      },
-      update: {
-        roleId: role.id,
-      },
+      where: { userId: user.id },
+      update: { roleId: role.id },
       create: {
         userId: user.id,
         roleId: role.id,
@@ -253,13 +236,9 @@ async function seedAdminUser() {
 
 async function main() {
   await seedPermissions();
-
   await seedRoles();
-
   await seedRolePermissions();
-
-  await seedAdminUser();
-
+  await seedDemoUsers();
   console.log('Seed completed successfully');
 }
 

@@ -12,10 +12,19 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { RegistrationService } from './registration.service';
+import { RecoveryEmailService } from './recovery-email.service';
+import { ProfessionalVerificationService } from './professional-verification.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { CreateInstitutionalUserDto } from './dto/create-institutional-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateOwnProfileDto } from './dto/update-own-profile.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
+import {
+  SetRecoveryEmailDto,
+  VerifyRecoveryEmailDto,
+} from './dto/recovery-email.dto';
+import { SubmitProfessionalProfileDto } from './dto/submit-professional-profile.dto';
+import { ReviewProfessionalDto } from './dto/review-professional.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -28,6 +37,8 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly registrationService: RegistrationService,
+    private readonly recoveryEmailService: RecoveryEmailService,
+    private readonly professionalVerificationService: ProfessionalVerificationService,
   ) {}
 
   @Post('register')
@@ -94,6 +105,114 @@ export class UsersController {
   async getDashboardStats() {
     const data = await this.usersService.getDashboardStats();
     return { success: true, data };
+  }
+
+  // ── Self-service profile / recovery email (before :id) ───────────
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Get('me')
+  @ApiOperation({ summary: 'Get current user profile (incl. recovery email)' })
+  async getMe(@CurrentUser() actor: { id: string }) {
+    const data = await this.recoveryEmailService.getMe(actor.id);
+    return { success: true, data };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Patch('me')
+  @ApiOperation({ summary: 'Update own name, lastname and cedula' })
+  async updateOwnProfile(
+    @CurrentUser() actor: { id: string; email: string },
+    @Body() dto: UpdateOwnProfileDto,
+  ) {
+    const data = await this.usersService.updateOwnProfile(actor.id, dto, actor);
+    return { success: true, data };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Post('me/recovery-email')
+  @ApiOperation({ summary: 'Set or change recovery email (sends verification code)' })
+  async setRecoveryEmail(
+    @CurrentUser() actor: { id: string },
+    @Body() dto: SetRecoveryEmailDto,
+  ) {
+    const data = await this.recoveryEmailService.setRecoveryEmail(
+      actor.id,
+      dto.recoveryEmail,
+    );
+    return { success: true, ...data };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Post('me/recovery-email/verify')
+  @ApiOperation({ summary: 'Verify recovery email with 6-digit code' })
+  async verifyRecoveryEmail(
+    @CurrentUser() actor: { id: string },
+    @Body() dto: VerifyRecoveryEmailDto,
+  ) {
+    const data = await this.recoveryEmailService.verifyRecoveryEmail(
+      actor.id,
+      dto.code,
+    );
+    return { success: true, ...data };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Delete('me/recovery-email')
+  @ApiOperation({ summary: 'Remove recovery email' })
+  async removeRecoveryEmail(@CurrentUser() actor: { id: string }) {
+    const data = await this.recoveryEmailService.removeRecoveryEmail(actor.id);
+    return { success: true, ...data };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Post('me/professional-profile')
+  @ApiOperation({
+    summary:
+      'Architect submits name, lastname, cedula and SENESCYT code for secretary verification',
+  })
+  async submitProfessionalProfile(
+    @CurrentUser() actor: { id: string },
+    @Body() dto: SubmitProfessionalProfileDto,
+  ) {
+    const data = await this.professionalVerificationService.submitProfile(
+      actor.id,
+      dto,
+    );
+    return { success: true, ...data };
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @ApiBearerAuth()
+  @Get('professional-verifications/pending')
+  @Roles(Role.SECRETARY, Role.ADMINISTRATOR)
+  @ApiOperation({ summary: 'List architects pending professional verification' })
+  async listPendingProfessionals() {
+    const data = await this.professionalVerificationService.listPending();
+    return { success: true, data };
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @ApiBearerAuth()
+  @Post(':id/professional-verify')
+  @Roles(Role.SECRETARY, Role.ADMINISTRATOR)
+  @ApiOperation({ summary: 'Approve or reject architect professional verification' })
+  async reviewProfessional(
+    @Param('id') id: string,
+    @Body() dto: ReviewProfessionalDto,
+    @CurrentUser() actor: { id: string; email: string },
+  ) {
+    const data = await this.professionalVerificationService.review(
+      id,
+      dto.approved,
+      actor,
+    );
+    return { success: true, ...data };
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

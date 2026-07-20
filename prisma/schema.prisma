@@ -18,6 +18,13 @@ enum UserStatus {
   INACTIVE
 }
 
+enum ProfessionalStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
 enum SessionState {
   ACTIVE
   REVOKED
@@ -60,9 +67,33 @@ model User {
 
   status UserStatus @default(ACTIVE)
 
+  /// Código SENESCYT del título (revisión manual por secretaría)
+  senescytCode String? @map("senescyt_code")
+
+  /// Habilitación profesional del arquitecto (rol USER)
+  professionalStatus ProfessionalStatus @default(UNVERIFIED) @map("professional_status")
+
   emailVerified      Boolean   @default(false) @map("email_verified")
   verificationCode   String?   @map("verification_code")
   verificationExpiry DateTime? @map("verification_expiry")
+
+  recoveryEmail            String?   @unique @map("recovery_email")
+  recoveryEmailVerified    Boolean   @default(false) @map("recovery_email_verified")
+  recoveryEmailCode        String?   @map("recovery_email_code")
+  recoveryEmailCodeExpiry  DateTime? @map("recovery_email_code_expiry")
+
+  passwordResetCode   String?   @map("password_reset_code")
+  passwordResetExpiry DateTime? @map("password_reset_expiry")
+
+  /// Perfil de firma electrónica capturado del certificado (primer MATCH válido)
+  signatureCertFingerprint String?   @map("signature_cert_fingerprint")
+  signatureCertCommonName  String?   @map("signature_cert_common_name")
+  signatureCertNationalId  String?   @map("signature_cert_national_id")
+  signatureCertIssuerCn    String?   @map("signature_cert_issuer_cn")
+  signatureCertValidFrom   DateTime? @map("signature_cert_valid_from")
+  signatureCertValidTo     DateTime? @map("signature_cert_valid_to")
+  signatureProfileCapturedAt DateTime? @map("signature_profile_captured_at")
+  signatureProfileSourceAttachmentId String? @map("signature_profile_source_attachment_id")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")

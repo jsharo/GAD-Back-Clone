@@ -1,6 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { AuditService } from '../audit/audit.service';
-import { EmailService } from '../email/email.service';
 import { RolesService } from '../roles/roles.service';
 import { VerificationService } from '../verification/verification.service';
 import { Role } from '../common/enums/role.enum';
@@ -17,50 +16,64 @@ type RegisterOptions = {
 
 @Injectable()
 export class RegistrationService {
+  private readonly logger = new Logger(RegistrationService.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly rolesService: RolesService,
     private readonly verificationService: VerificationService,
-    private readonly emailService: EmailService,
     private readonly auditService: AuditService,
   ) {}
 
   private async sendVerificationEmail(userId: string, email: string) {
     const code = await this.verificationService.createVerificationCode(userId);
-    const subject = 'Verifica tu correo — GAD Cañar';
-    const text = `Tu código de verificación es: ${code}. Expira en 15 minutos.`;
-    const html = `
-      <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px">
-        <h2 style="color:#1e3a5f;margin:0 0 16px">GAD Municipal de Cañar</h2>
-        <p style="color:#334155;line-height:1.5">Usa este código para verificar tu correo electrónico:</p>
-        <p style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#1e3a5f;margin:24px 0">${code}</p>
-        <p style="color:#64748b;font-size:14px">El código expira en 15 minutos. Si no solicitaste este registro, ignora este mensaje.</p>
-      </div>
-    `;
-
-    await this.emailService.send({ to: email, subject, text, html });
+    await this.verificationService.sendVerificationEmail(email, code);
   }
 
+  /**
+   * Registration is atomic w.r.t. verification email:
+   * if sending the email fails, the created user (and related rows) are hard-deleted
+   * so the email can be registered again and the client never gets a half-created account.
+   */
   private async register(dto: CreateUserDto, options: RegisterOptions) {
     const user = await this.usersService.create(dto);
 
-    const assignedById =
-      options.assignedById === 'self-registration' ? user.id : options.assignedById;
+    try {
+      const assignedById =
+        options.assignedById === 'self-registration' ? user.id : options.assignedById;
 
-    await this.rolesService.assignRole(user.id, options.roleName, assignedById);
+      await this.rolesService.assignRole(user.id, options.roleName, assignedById);
 
-    if (options.sendVerificationEmail !== false) {
-      await this.sendVerificationEmail(user.id, user.email);
+      if (options.sendVerificationEmail !== false) {
+        await this.sendVerificationEmail(user.id, user.email);
+      }
+
+      await this.auditService.logAction(
+        assignedById,
+        user.email,
+        options.auditAction,
+        `User registered: ${user.email} with role ${options.roleName}`,
+      );
+
+      return { message: options.successMessage, user };
+    } catch (error) {
+      this.logger.error(
+        `Registration failed for ${user.email}; rolling back user ${user.id}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+
+      try {
+        await this.usersService.hardDelete(user.id);
+      } catch (rollbackError) {
+        this.logger.error(
+          `Failed to rollback user ${user.id} after registration error`,
+          rollbackError instanceof Error ? rollbackError.stack : undefined,
+        );
+      }
+
+      // Re-throw original error (e.g. email 500) so the client sees the real failure
+      throw error;
     }
-
-    await this.auditService.logAction(
-      assignedById,
-      user.email,
-      options.auditAction,
-      `User registered: ${user.email} with role ${options.roleName}`,
-    );
-
-    return { message: options.successMessage, user };
   }
 
   registerCitizen(dto: CreateUserDto) {
