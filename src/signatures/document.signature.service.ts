@@ -70,7 +70,7 @@ export class DocumentSignatureService {
       if (match) {
         return {
           identity_status: 'MATCH',
-          identity_message: 'La cédula del certificado coincide con la persona esperada.',
+          identity_message: 'The certificate national ID matches the expected person.',
           national_id: match.value,
           national_id_source: match.source,
           name_matches_expected,
@@ -79,7 +79,7 @@ export class DocumentSignatureService {
 
       return {
         identity_status: 'MISMATCH',
-        identity_message: 'La cédula del certificado no coincide con la persona esperada.',
+        identity_message: 'The certificate national ID does not match the expected person.',
         national_id: candidates[0].value,
         national_id_source: candidates[0].source,
         name_matches_expected,
@@ -89,7 +89,7 @@ export class DocumentSignatureService {
     if (name_matches_expected) {
       return {
         identity_status: 'INDETERMINATE',
-        identity_message: 'El nombre coincide, pero el certificado no expone una cédula comprobable.',
+        identity_message: 'The name matches, but the certificate does not expose a verifiable national ID.',
         national_id: candidates[0]?.value || null,
         national_id_source: candidates[0]?.source || null,
         name_matches_expected,
@@ -98,7 +98,7 @@ export class DocumentSignatureService {
 
     return {
       identity_status: 'INDETERMINATE',
-      identity_message: 'El certificado no contiene identidad suficiente para una comparación concluyente.',
+      identity_message: 'The certificate does not contain sufficient identity for a conclusive comparison.',
       national_id: candidates[0]?.value || null,
       national_id_source: candidates[0]?.source || null,
       name_matches_expected,
@@ -231,34 +231,34 @@ export class DocumentSignatureService {
     status: SignatureVerificationStatus,
   ) {
     const warnings: string[] = [];
-    if (status === 'UNSIGNED') warnings.push('El PDF no contiene firmas digitales embebidas.');
+    if (status === 'UNSIGNED') warnings.push('The PDF does not contain embedded digital signatures.');
     if (status === 'MISMATCH') {
-      warnings.push('Ninguna firma íntegra coincide con la cédula de la persona esperada.');
+      warnings.push('No intact signature matches the expected person\'s national ID.');
     }
     if (status === 'INVALID') {
-      warnings.push('Las firmas encontradas no superaron la comprobación de integridad.');
+      warnings.push('The signatures found did not pass the integrity check.');
     }
     if (status === 'INDETERMINATE') {
-      warnings.push('No fue posible asociar las firmas con una identidad de forma concluyente.');
+      warnings.push('The signatures could not be conclusively associated with an identity.');
     }
-    if (status === 'ERROR') warnings.push('El motor de firmas no pudo analizar el PDF.');
+    if (status === 'ERROR') warnings.push('The signature engine could not analyze the PDF.');
     if (signatures.some((signature) => signature.identity_status === 'MISMATCH')) {
-      warnings.push('El documento contiene al menos una firma de una persona diferente.');
+      warnings.push('The document contains at least one signature from a different person.');
     }
     if (signatures.some((signature) => !signature.integrity_valid)) {
-      warnings.push('El documento contiene al menos una firma inválida o afectada por cambios.');
+      warnings.push('The document contains at least one invalid signature or one affected by changes.');
     }
     if (signatures.some((signature) => signature.trust_status === 'NOT_CONFIGURED')) {
-      warnings.push('La cadena de confianza no está configurada; esto no invalida por sí solo la integridad.');
+      warnings.push('The trust chain is not configured; this alone does not invalidate integrity.');
     }
     if (signatures.some((signature) => signature.trust_status === 'UNTRUSTED')) {
-      warnings.push('La cadena del certificado no llega a una raíz de confianza configurada.');
+      warnings.push('The certificate chain does not reach a configured trust root.');
     }
     if (signatures.some((signature) => signature.trust_status === 'REVOKED')) {
-      warnings.push('Se detectó un certificado revocado.');
+      warnings.push('A revoked certificate was detected.');
     }
     if (signatures.some((signature) => signature.trust_status === 'EXPIRED')) {
-      warnings.push('Se detectó un certificado fuera de su periodo de vigencia.');
+      warnings.push('A certificate outside its validity period was detected.');
     }
     return [...new Set(warnings)];
   }

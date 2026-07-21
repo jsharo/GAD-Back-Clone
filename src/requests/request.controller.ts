@@ -64,12 +64,12 @@ export class RequestController {
   @Roles(Role.CITIZEN, Role.USER, Role.ADMINISTRATOR)
   @RequirePermissions('requests.write')
   @ApiOperation({
-    summary: 'Crear una solicitud de trámite',
+    summary: 'Create a procedure request',
     description:
-      'Un ciudadano crea el trámite directamente. ' +
-      'Un profesional habilitado (ARCHITECT) crea el trámite en nombre del ciudadano propietario ' +
-      'indicando "citizen_id" en el cuerpo. ' +
-      'El sistema valida que el profesional esté habilitado y que se cumplan los prerequisitos del tipo de trámite.',
+      'A citizen creates the request directly. ' +
+      'A licensed professional (ARCHITECT) creates the request on behalf of the property owner ' +
+      'by providing "citizen_id" in the body. ' +
+      'The system validates that the professional is authorized and that the procedure type prerequisites are met.',
   })
   async create(@Body() create_dto: CreateRequestDto, @CurrentUser() user: any) {
     const data = await this.request_service.create(create_dto, user);
@@ -80,7 +80,7 @@ export class RequestController {
   // LISTAR SOLICITUDES
   // ──────────────────────────────────────────────────────────────────────────
   @Get('my-requests')
-  @ApiOperation({ summary: 'Solicitudes del ciudadano autenticado' })
+  @ApiOperation({ summary: 'Requests for the authenticated citizen' })
   async findMine(@CurrentUser() user: any) {
     const data = await this.request_service.findByCitizen(user.id);
     return { success: true, data };
@@ -89,7 +89,7 @@ export class RequestController {
   @Get('my-filings')
   @Roles(Role.USER, Role.ADMINISTRATOR)
   @RequirePermissions('requests.read', 'requests.write')
-  @ApiOperation({ summary: 'Expedientes ingresados por el profesional autenticado' })
+  @ApiOperation({ summary: 'Request files submitted by the authenticated professional' })
   async findMyFilings(@CurrentUser() user: any) {
     const data = await this.request_service.findByArchitect(user.id);
     return { success: true, data };
@@ -98,8 +98,8 @@ export class RequestController {
   @Get()
   @Roles(Role.SECRETARY, Role.ADMINISTRATOR, Role.TECHNICIAN, Role.FINANCIAL)
   @RequirePermissions('requests.read', 'requests.review')
-  @ApiOperation({ summary: 'Listar todas las solicitudes (filtro opcional por estado)' })
-  @ApiQuery({ name: 'status', required: false, description: 'Filtrar por estado de la solicitud' })
+  @ApiOperation({ summary: 'List all requests (optional status filter)' })
+  @ApiQuery({ name: 'status', required: false, description: 'Filter by request status' })
   async findAll(@Query('status') status?: string) {
     const data = await this.request_service.findAll(status);
     return { success: true, data };
@@ -131,10 +131,10 @@ export class RequestController {
   @Get(':id/signature-verification')
   @Roles(Role.SECRETARY, Role.ADMINISTRATOR)
   @ApiOperation({
-    summary: 'Verificar firmas PDF e identidad esperada en todos los adjuntos',
+    summary: 'Verify PDF signatures and expected identity across all attachments',
     description:
-      'Extrae cada firma y certificado, comprueba integridad criptográfica y compara la ' +
-      'cédula disponible en el certificado con la persona responsable del expediente.',
+      'Extracts each signature and certificate, checks cryptographic integrity, and compares the ' +
+      'national ID available in the certificate with the person responsible for the request file.',
   })
   @ApiQuery({ name: 'refresh', required: false, type: Boolean })
   async verifyRequestSignatures(
@@ -159,7 +159,7 @@ export class RequestController {
     Role.FINANCIAL,
     Role.ADMINISTRATOR,
   )
-  @ApiOperation({ summary: 'Detalle completo de una solicitud' })
+  @ApiOperation({ summary: 'Full request details' })
   async findOne(@Param('id') id: string, @CurrentUser() user: any) {
     const data = await this.request_service.findOne(id, user);
     return { success: true, data };
@@ -172,12 +172,12 @@ export class RequestController {
   @Roles(Role.SECRETARY, Role.ADMINISTRATOR)
   @RequirePermissions('requests.review')
   @ApiOperation({
-    summary: 'Revisión de la secretaría: registrar firma y aprobar/observar el expediente',
+    summary: 'Secretary review: record signature and approve/observe the request file',
     description:
-      'La secretaria verifica manualmente la firma digital del profesional en el PDF adjunto. ' +
-      'Si la firma no está validada (signature_validated=false), el sistema registra una alerta informativa y permite continuar. ' +
-      'Si aprueba (approved=true) → estado PENDING_TECHNICIAN. ' +
-      'Si observa (approved=false) → estado OBSERVED, el expediente regresa al profesional/ciudadano.',
+      'The secretary manually verifies the professional\'s digital signature on the attached PDF. ' +
+      'If the signature is not validated (signature_validated=false), the system records an informational alert and allows proceeding. ' +
+      'If approved (approved=true) → status PENDING_TECHNICIAN. ' +
+      'If observed (approved=false) → status OBSERVED; the request file returns to the professional/citizen.',
   })
   async secretaryReview(
     @Param('id') id: string,
@@ -195,8 +195,8 @@ export class RequestController {
   @Roles(Role.SECRETARY, Role.ADMINISTRATOR, Role.TECHNICIAN, Role.FINANCIAL)
   @RequirePermissions('requests.review')
   @ApiOperation({
-    summary: 'Actualizar estado de la solicitud (uso general)',
-    description: 'Para transiciones manuales como PAID → APPROVED. La secretaría usa /secretary-review.',
+    summary: 'Update request status (general use)',
+    description: 'For manual transitions such as PAID → APPROVED. The secretary uses /secretary-review.',
   })
   async updateStatus(
     @Param('id') id: string,
@@ -213,7 +213,7 @@ export class RequestController {
   @Post(':id/schedule')
   @Roles(Role.SECRETARY, Role.ADMINISTRATOR)
   @RequirePermissions('requests.review')
-  @ApiOperation({ summary: 'Programar inspección técnica → estado INSPECTION' })
+  @ApiOperation({ summary: 'Schedule technical inspection → INSPECTION status' })
   async scheduleInspection(
     @Param('id') id: string,
     @Body() schedule_dto: ScheduleInspectionDto,
@@ -229,7 +229,7 @@ export class RequestController {
   @Post(':id/inspection-report')
   @Roles(Role.TECHNICIAN, Role.ADMINISTRATOR)
   @RequirePermissions('requests.review')
-  @ApiOperation({ summary: 'Subir informe técnico y fotos de la inspección' })
+  @ApiOperation({ summary: 'Upload technical inspection report and photos' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
     FilesInterceptor('photos', 5, {
@@ -254,11 +254,11 @@ export class RequestController {
   @Roles(Role.TECHNICIAN, Role.SECRETARY, Role.ADMINISTRATOR, Role.FINANCIAL)
   @RequirePermissions('requests.review')
   @ApiOperation({
-    summary: 'Resolver la solicitud (aprobar o rechazar)',
+    summary: 'Resolve the request (approve or reject)',
     description:
-      'Si se aprueba, el sistema calcula automáticamente el monto a pagar según el tipo de trámite, ' +
-      'la zona del predio y el área en m². El profesional NO ingresa el monto manualmente. ' +
-      'Estado resultante: PENDING_PAYMENT (aprobado) o REJECTED (rechazado).',
+      'If approved, the system automatically calculates the payment amount based on the procedure type, ' +
+      'the property zone, and the area in m². The professional does NOT enter the amount manually. ' +
+      'Resulting status: PENDING_PAYMENT (approved) or REJECTED (rejected).',
   })
   async resolve(
     @Param('id') id: string,
@@ -283,11 +283,11 @@ export class RequestController {
     Role.ADMINISTRATOR,
   )
   @ApiOperation({
-    summary: 'Subir documento al expediente clasificado por carpeta',
+    summary: 'Upload document to the request file by folder',
     description:
-      'Adjunta un archivo al expediente en la carpeta indicada: ' +
-      'PLANOS, DOCUMENTOS_LEGALES, INFORMES u OTROS. ' +
-      'El sistema calcula y almacena el hash SHA-256; si reemplaza un documento del mismo nombre/carpeta con hash distinto, registra una alerta informativa.',
+      'Attaches a file to the request file in the specified folder: ' +
+      'PLANOS, DOCUMENTOS_LEGALES, INFORMES, or OTROS. ' +
+      'The system calculates and stores the SHA-256 hash; if it replaces a document with the same name/folder but a different hash, it records an informational alert.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -327,8 +327,8 @@ export class RequestController {
     Role.ADMINISTRATOR,
   )
   @ApiOperation({
-    summary: 'Listar documentos del expediente',
-    description: 'Opcionalmente filtra por carpeta: ?folder=PLANOS',
+    summary: 'List request file documents',
+    description: 'Optionally filter by folder: ?folder=PLANOS',
   })
   @ApiQuery({
     name: 'folder',
@@ -353,10 +353,10 @@ export class RequestController {
     Role.FINANCIAL,
     Role.ADMINISTRATOR,
   )
-  @ApiOperation({ summary: 'Descargar o visualizar un documento del expediente' })
+  @ApiOperation({ summary: 'Download or view a request file document' })
   @ApiProduces('application/octet-stream')
   @ApiOkResponse({
-    description: 'Contenido binario del documento.',
+    description: 'Binary document content.',
     schema: { type: 'string', format: 'binary' },
   })
   async downloadAttachment(
@@ -399,7 +399,7 @@ export class RequestController {
     Role.FINANCIAL,
     Role.ADMINISTRATOR,
   )
-  @ApiOperation({ summary: 'Verificar integridad SHA-256 de un documento del expediente' })
+  @ApiOperation({ summary: 'Verify SHA-256 integrity of a request file document' })
   async verifyAttachmentIntegrity(
     @Param('id') id: string,
     @Param('attachmentId') attachment_id: string,
@@ -415,7 +415,7 @@ export class RequestController {
   @Get(':id/attachments/:attachmentId/signatures')
   @Roles(Role.SECRETARY, Role.ADMINISTRATOR)
   @ApiOperation({
-    summary: 'Extraer y verificar todas las firmas de un PDF del expediente',
+    summary: 'Extract and verify all signatures on a request file PDF',
   })
   @ApiQuery({ name: 'refresh', required: false, type: Boolean })
   async verifyAttachmentSignatures(
@@ -435,7 +435,7 @@ export class RequestController {
 
   @Post(':id/attachments/:attachmentId/ipfs')
   @Roles(Role.ADMINISTRATOR, Role.SECRETARY)
-  @ApiOperation({ summary: 'Subir manualmente un documento a IPFS' })
+  @ApiOperation({ summary: 'Manually upload a document to IPFS' })
   async uploadAttachmentToIpfs(
     @Param('id') id: string,
     @Param('attachmentId') attachment_id: string,
@@ -450,7 +450,7 @@ export class RequestController {
 
   @Post(':id/attachments/:attachmentId/blockchain')
   @Roles(Role.ADMINISTRATOR, Role.SECRETARY)
-  @ApiOperation({ summary: 'Anclar evidencia documental en blockchain' })
+  @ApiOperation({ summary: 'Anchor document evidence on blockchain' })
   async anchorAttachmentEvidence(
     @Param('id') id: string,
     @Param('attachmentId') attachment_id: string,
@@ -465,7 +465,7 @@ export class RequestController {
 
   @Delete(':id/attachments/:attachmentId')
   @Roles(Role.SECRETARY, Role.USER, Role.ADMINISTRATOR)
-  @ApiOperation({ summary: 'Eliminar un documento del expediente (archivo físico + registro)' })
+  @ApiOperation({ summary: 'Delete a request file document (physical file + record)' })
   async deleteAttachment(
     @Param('id') id: string,
     @Param('attachmentId') attachment_id: string,

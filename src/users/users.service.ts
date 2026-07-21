@@ -158,7 +158,7 @@ export class UsersService {
       !existingCedula.deletedAt &&
       existingCedula.id !== excludeUserId
     ) {
-      throw new ConflictException('Esta cédula ya está registrada en el sistema.');
+      throw new ConflictException('This ID number is already registered in the system.');
     }
   }
 
@@ -171,7 +171,7 @@ export class UsersService {
       cedula = dto.cedula.trim();
       if (!isValidEcuadorianCedula(cedula)) {
         throw new BadRequestException(
-          'La cédula no es válida. Debe ser un número de identidad ecuatoriano real.',
+          'The ID number is not valid. It must be a valid Ecuadorian national ID number.',
         );
       }
       await this.assertUniqueCedula(cedula);
@@ -205,7 +205,7 @@ export class UsersService {
     if (role === Role.USER) {
       if (existing.professionalStatus !== 'VERIFIED') {
         throw new ForbiddenException(
-          'Solo puedes editar tu perfil después de que Secretaría apruebe tu habilitación profesional.',
+          'You can only edit your profile after the secretary approves your professional verification.',
         );
       }
     }
@@ -214,7 +214,7 @@ export class UsersService {
       const cedula = dto.cedula.trim();
       if (!isValidEcuadorianCedula(cedula)) {
         throw new BadRequestException(
-          'La cédula no es válida. Debe ser un número de identidad ecuatoriano real.',
+          'The ID number is not valid. It must be a valid Ecuadorian national ID number.',
         );
       }
       await this.assertUniqueCedula(cedula, userId);
@@ -263,7 +263,7 @@ export class UsersService {
       if (cedula) {
         if (!isValidEcuadorianCedula(cedula)) {
           throw new BadRequestException(
-            'La cédula no es válida. Debe ser un número de identidad ecuatoriano real.',
+            'The ID number is not valid. It must be a valid Ecuadorian national ID number.',
           );
         }
         await this.assertUniqueCedula(cedula, id);

@@ -26,7 +26,7 @@ export class PasswordResetService {
 
     if (!user || user.status !== 'ACTIVE') {
       throw new NotFoundException(
-        'No encontramos una cuenta con ese email. Usa tu email principal o tu email secundario verificado.',
+        'We could not find an account with that email. Use your primary email or your verified recovery email.',
       );
     }
 
@@ -44,7 +44,7 @@ export class PasswordResetService {
     await this.sendResetEmail(normalized, code, this.maskEmail(normalized));
 
     return {
-      message: `Enviamos un código de verificación a ${this.maskEmail(normalized)}.`,
+      message: `We sent a verification code to ${this.maskEmail(normalized)}.`,
     };
   }
 
@@ -53,16 +53,16 @@ export class PasswordResetService {
     const user = await this.findUserByAccountEmail(normalized);
 
     if (!user?.passwordResetCode || !user.passwordResetExpiry) {
-      throw new BadRequestException('Código inválido o expirado.');
+      throw new BadRequestException('Invalid or expired code.');
     }
 
     if (user.passwordResetExpiry.getTime() < Date.now()) {
-      throw new BadRequestException('Código inválido o expirado.');
+      throw new BadRequestException('Invalid or expired code.');
     }
 
     const isValid = await bcrypt.compare(code, user.passwordResetCode);
     if (!isValid) {
-      throw new BadRequestException('Código inválido o expirado.');
+      throw new BadRequestException('Invalid or expired code.');
     }
 
     const passwordHash = await bcrypt.hash(newPassword, PASSWORD_SALT_ROUNDS);
@@ -79,7 +79,7 @@ export class PasswordResetService {
       await this.tokensService.revokeAllUserTokens(user.id, tx);
     });
 
-    return { message: 'Contraseña actualizada. Ya puedes iniciar sesión.' };
+    return { message: 'Password updated. You can now sign in.' };
   }
 
   private async findUserByAccountEmail(normalized: string) {
@@ -119,14 +119,14 @@ export class PasswordResetService {
   }
 
   private async sendResetEmail(to: string, code: string, masked: string) {
-    const subject = 'Restablecer contraseña — GAD Cañar';
-    const text = `Tu código para restablecer la contraseña es: ${code}. Expira en 15 minutos. Enviado a ${masked}.`;
+    const subject = 'Reset password — GAD Cañar';
+    const text = `Your password reset code is: ${code}. It expires in 15 minutes. Sent to ${masked}.`;
     const html = `
       <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px">
         <h2 style="color:#004183;margin:0 0 16px">GAD Municipal de Cañar</h2>
-        <p style="color:#334155;line-height:1.5">Recibimos una solicitud para restablecer tu contraseña. Usa este código:</p>
+        <p style="color:#334155;line-height:1.5">We received a request to reset your password. Use this code:</p>
         <p style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#004183;margin:24px 0">${code}</p>
-        <p style="color:#64748b;font-size:14px">Destino: ${masked}. El código expira en 15 minutos. Si no solicitaste este cambio, ignora este mensaje.</p>
+        <p style="color:#64748b;font-size:14px">Sent to: ${masked}. The code expires in 15 minutes. If you did not request this change, ignore this message.</p>
       </div>
     `;
     await this.emailService.send({ to, subject, text, html });

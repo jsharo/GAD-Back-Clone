@@ -43,14 +43,14 @@ export class VerificationService {
   }
 
   async sendVerificationEmail(email: string, code: string): Promise<void> {
-    const subject = 'Verifica tu correo — GAD Cañar';
-    const text = `Tu código de verificación es: ${code}. Expira en 15 minutos.`;
+    const subject = 'Verify your email — GAD Cañar';
+    const text = `Your verification code is: ${code}. It expires in 15 minutes.`;
     const html = `
       <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px">
         <h2 style="color:#1e3a5f;margin:0 0 16px">GAD Municipal de Cañar</h2>
-        <p style="color:#334155;line-height:1.5">Usa este código para verificar tu correo electrónico:</p>
+        <p style="color:#334155;line-height:1.5">Use this code to verify your email address:</p>
         <p style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#1e3a5f;margin:24px 0">${code}</p>
-        <p style="color:#64748b;font-size:14px">El código expira en 15 minutos. Si no solicitaste este registro, ignora este mensaje.</p>
+        <p style="color:#64748b;font-size:14px">The code expires in 15 minutes. If you did not request this registration, ignore this message.</p>
       </div>
     `;
 

@@ -10,23 +10,23 @@ export enum AttachmentFolder {
 
 export class UploadAttachmentDto {
   /**
-   * Carpeta destino del documento dentro del expediente.
-   * - PLANOS: Planos arquitectónicos / técnicos
-   * - DOCUMENTOS_LEGALES: Escritura, cédula, título de propiedad
-   * - INFORMES: Informes técnicos, de inspección
-   * - OTROS: Cualquier otro documento de soporte
+   * Destination folder for the document within the request file.
+   * - PLANOS: Architectural / technical plans
+   * - DOCUMENTOS_LEGALES: Deed, ID card, property title
+   * - INFORMES: Technical and inspection reports
+   * - OTROS: Any other supporting document
    */
   @ApiProperty({
     enum: AttachmentFolder,
     example: AttachmentFolder.PLANOS,
-    description: 'Carpeta del expediente donde se archiva el documento.',
+    description: 'Request file folder where the document is archived.',
   })
   @IsEnum(AttachmentFolder)
   folder: AttachmentFolder;
 
   @ApiPropertyOptional({
-    example: 'Plano de implantación — Planta baja',
-    description: 'Nombre descriptivo del documento. Si se omite se usa el nombre original del archivo.',
+    example: 'Site plan — Ground floor',
+    description: 'Descriptive document name. If omitted, the original file name is used.',
   })
   @IsString()
   @IsOptional()

@@ -36,16 +36,16 @@ export class CreateRequestDto {
   phone?: string;
 
   /**
-   * UUID del ciudadano propietario del predio.
-   * Requerido cuando quien crea la solicitud es un ARCHITECT.
-   * Si el ciudadano crea la solicitud directamente, este campo se ignora
-   * y se usa su propio `id`.
+   * UUID of the citizen who owns the property.
+   * Required when the request is created by an ARCHITECT.
+   * If the citizen creates the request directly, this field is ignored
+   * and their own `id` is used.
    */
   @ApiPropertyOptional({
     example: 'e3b0c442-98fc-1c14-9afb-f4c8996fb924',
     description:
-      'UUID del ciudadano en cuyo nombre el profesional habilitado registra el trámite. ' +
-      'Obligatorio cuando el rol del solicitante es ARCHITECT.',
+      'UUID of the citizen on whose behalf the licensed professional registers the procedure. ' +
+      'Required when the requester role is ARCHITECT.',
   })
   @IsUUID()
   @IsOptional()

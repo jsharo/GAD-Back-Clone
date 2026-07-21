@@ -57,7 +57,7 @@ export class RequestService {
       fs.writeFileSync(file_path, buffer, { flag: 'wx' });
     } catch {
       throw new InternalServerErrorException(
-        'No se pudo almacenar el archivo de forma segura.',
+        'The file could not be stored securely.',
       );
     }
   }
@@ -96,7 +96,7 @@ export class RequestService {
     });
 
     if (!request) {
-      throw new NotFoundException('Solicitud no encontrada.');
+      throw new NotFoundException('Request not found.');
     }
 
     const role = active_user?.role as Role;
@@ -112,7 +112,7 @@ export class RequestService {
 
       if (!can_delete) {
         throw new ForbiddenException(
-          'No tiene permisos para eliminar documentos de este expediente.',
+          'You do not have permission to delete documents from this request file.',
         );
       }
 
@@ -133,7 +133,7 @@ export class RequestService {
       !is_professional_owner
     ) {
       throw new ForbiddenException(
-        'No tiene permisos para acceder a este expediente.',
+        'You do not have permission to access this request file.',
       );
     }
 
@@ -155,9 +155,8 @@ export class RequestService {
 
     if (!approved_building_line) {
       throw new BadRequestException(
-        'Para solicitar una Aprobación de Planos, el ciudadano debe contar con una ' +
-        'Línea de Fábricas APROBADA previamente. ' +
-        'Por favor, tramite primero la Línea de Fábricas.',
+        'To request a Plan Approval, the citizen must have a previously APPROVED Building Line. ' +
+        'Please process the Building Line first.',
       );
     }
   }
@@ -181,7 +180,7 @@ export class RequestService {
 
       if (!create_dto.citizen_id) {
         throw new BadRequestException(
-          'El profesional habilitado debe especificar el "citizen_id" del propietario del predio.',
+          'The licensed professional must specify the property owner\'s "citizen_id".',
         );
       }
 
@@ -196,7 +195,7 @@ export class RequestService {
       });
       if (!citizen) {
         throw new NotFoundException(
-          `No se encontró ningún ciudadano con id: ${create_dto.citizen_id}`,
+          `No citizen was found with id: ${create_dto.citizen_id}`,
         );
       }
 
@@ -235,7 +234,7 @@ export class RequestService {
 
     // 3. Primera entrada en el historial
     const responsible_label = architect_id
-      ? `Profesional: ${active_user.email} en nombre del ciudadano`
+      ? `Professional: ${active_user.email} on behalf of the citizen`
       : active_user.email;
 
     await this.prisma.requestHistory.create({
@@ -243,8 +242,8 @@ export class RequestService {
         previous_status: 'NONE',
         new_status: RequestStatus.PENDING_SECRETARY,
         comment: architect_id
-          ? `Expediente ingresado por profesional habilitado (${active_user.email}) a nombre del propietario.`
-          : 'Solicitud registrada por el ciudadano.',
+          ? `Request file submitted by licensed professional (${active_user.email}) on behalf of the property owner.`
+          : 'Request registered by the citizen.',
         responsible: responsible_label,
         request_id: request.id,
       },
@@ -255,8 +254,8 @@ export class RequestService {
       active_user.id,
       active_user.email,
       'CREATE_REQUEST',
-      `Solicitud creada para el predio en ${property.address} — tipo: ${request.request_type}` +
-      (architect_id ? ` — por profesional habilitado` : ''),
+      `Request created for the property at ${property.address} — type: ${request.request_type}` +
+      (architect_id ? ` — by licensed professional` : ''),
     );
 
     return request;
@@ -329,7 +328,7 @@ export class RequestService {
     });
 
     if (!request) {
-      throw new NotFoundException('Solicitud no encontrada.');
+      throw new NotFoundException('Request not found.');
     }
 
     return request;
@@ -384,7 +383,7 @@ export class RequestService {
     });
 
     if (!request) {
-      throw new NotFoundException('Solicitud no encontrada.');
+      throw new NotFoundException('Request not found.');
     }
 
     const attachments = request.attachments.map((attachment) => {
@@ -493,7 +492,7 @@ export class RequestService {
   // ──────────────────────────────────────────────────────────────────────────
   async updateStatus(id: string, update_dto: UpdateStatusDto, active_user: any) {
     const request = await this.prisma.request.findUnique({ where: { id } });
-    if (!request) throw new NotFoundException('Solicitud no encontrada.');
+    if (!request) throw new NotFoundException('Request not found.');
 
     const updated = await this.prisma.request.update({
       where: { id },
@@ -504,7 +503,7 @@ export class RequestService {
       data: {
         previous_status: request.status,
         new_status: update_dto.status,
-        comment: update_dto.comment || 'Estado actualizado manualmente.',
+        comment: update_dto.comment || 'Status updated manually.',
         responsible: active_user.email,
         request_id: id,
       },
@@ -514,7 +513,7 @@ export class RequestService {
       active_user.id,
       active_user.email,
       'UPDATE_REQUEST_STATUS',
-      `Estado actualizado: ${request.status} → ${update_dto.status}`,
+      `Status updated: ${request.status} → ${update_dto.status}`,
     );
 
     return updated;
@@ -525,13 +524,13 @@ export class RequestService {
   // ──────────────────────────────────────────────────────────────────────────
   async secretaryReview(id: string, review_dto: SecretaryReviewDto, active_user: any) {
     const request = await this.prisma.request.findUnique({ where: { id } });
-    if (!request) throw new NotFoundException('Solicitud no encontrada.');
+    if (!request) throw new NotFoundException('Request not found.');
 
     // Solo se puede revisar si el expediente está en PENDING_SECRETARY u OBSERVED
     const reviewable_states = [RequestStatus.PENDING_SECRETARY, RequestStatus.OBSERVED];
     if (!reviewable_states.includes(request.status as RequestStatus)) {
       throw new BadRequestException(
-        `El expediente está en estado "${request.status}" y no puede ser revisado por la secretaría en este momento.`,
+        `The request file is in "${request.status}" status and cannot be reviewed by the secretary at this time.`,
       );
     }
 
@@ -546,8 +545,8 @@ export class RequestService {
       !review_dto.acknowledge_signature_warning
     ) {
       throw new BadRequestException(
-        'La verificación de firmas contiene diferencias, incertidumbres o alertas de confianza. ' +
-          'Revise el detalle y confirme explícitamente si desea continuar.',
+        'Signature verification contains differences, uncertainties, or trust warnings. ' +
+          'Review the details and explicitly confirm if you wish to proceed.',
       );
     }
 
@@ -557,8 +556,8 @@ export class RequestService {
           previous_status: request.status,
           new_status: request.status,
           comment:
-            'ALERTA DE FIRMA: La secretaría aprobó el expediente después de reconocer ' +
-            `advertencias del verificador. Estado automático: ${signature_summary.status}.`,
+            'SIGNATURE ALERT: The secretary approved the request file after acknowledging ' +
+            `verifier warnings. Automatic status: ${signature_summary.status}.`,
           responsible: 'SISTEMA',
           request_id: id,
         },
@@ -572,16 +571,16 @@ export class RequestService {
     if (!review_dto.approved) {
       new_status = RequestStatus.OBSERVED;
       history_comment =
-        `Expediente observado por la secretaría. ` +
-        (review_dto.remarks ? `Motivo: ${review_dto.remarks}` : 'Sin observaciones adicionales.');
+        `Request file observed by the secretary. ` +
+        (review_dto.remarks ? `Reason: ${review_dto.remarks}` : 'No additional remarks.');
     } else {
       new_status = RequestStatus.PENDING_TECHNICIAN;
       history_comment =
         (!signature_requires_acknowledgement
-          ? `Firma, identidad y confianza verificadas automáticamente; expediente aprobado por la secretaría. `
-          : `Expediente aprobado con alerta automática de firma (${signature_summary.status}); ` +
-            `la secretaría confirmó que desea continuar. `) +
-        `Se remite a revisión técnica. ` +
+          ? `Signature, identity, and trust verified automatically; request file approved by the secretary. `
+          : `Request file approved with automatic signature alert (${signature_summary.status}); ` +
+            `the secretary confirmed they wish to proceed. `) +
+        `Forwarded for technical review. ` +
         (review_dto.remarks ? review_dto.remarks : '');
     }
 
@@ -623,10 +622,10 @@ export class RequestService {
       active_user.id,
       active_user.email,
       'SECRETARY_REVIEW',
-      `Revisión de secretaría del expediente ${id}: aprobado=${review_dto.approved}, ` +
-        `firma_validada=${signature_validated}, estado_firmas=${signature_summary.status}, ` +
-        `firmante_esperado_id=${request.architect_id ?? request.citizen_id ?? 'NO_DEFINIDO'}, ` +
-        `nuevo estado=${new_status}`,
+      `Secretary review of request file ${id}: approved=${review_dto.approved}, ` +
+        `signature_validated=${signature_validated}, signature_status=${signature_summary.status}, ` +
+        `expected_signer_id=${request.architect_id ?? request.citizen_id ?? 'UNDEFINED'}, ` +
+        `new status=${new_status}`,
     );
 
     return {
@@ -643,7 +642,7 @@ export class RequestService {
   // ──────────────────────────────────────────────────────────────────────────
   async scheduleInspection(id: string, schedule_dto: ScheduleInspectionDto, active_user: any) {
     const request = await this.prisma.request.findUnique({ where: { id } });
-    if (!request) throw new NotFoundException('Solicitud no encontrada.');
+    if (!request) throw new NotFoundException('Request not found.');
 
     await this.prisma.inspection.upsert({
       where: { request_id: id },
@@ -671,7 +670,7 @@ export class RequestService {
         new_status: RequestStatus.INSPECTION,
         comment:
           schedule_dto.comments ||
-          `Visita técnica programada para el inspector: ${schedule_dto.technician}`,
+          `Technical visit scheduled for inspector: ${schedule_dto.technician}`,
         responsible: active_user.email,
         request_id: id,
       },
@@ -681,7 +680,7 @@ export class RequestService {
       active_user.id,
       active_user.email,
       'SCHEDULE_INSPECTION',
-      `Inspección agendada para el expediente ${id} — inspector: ${schedule_dto.technician}`,
+      `Inspection scheduled for request file ${id} — inspector: ${schedule_dto.technician}`,
     );
 
     return { id, status: RequestStatus.INSPECTION };
@@ -697,11 +696,11 @@ export class RequestService {
     active_user: any,
   ) {
     const request = await this.prisma.request.findUnique({ where: { id } });
-    if (!request) throw new NotFoundException('Solicitud no encontrada.');
+    if (!request) throw new NotFoundException('Request not found.');
 
     const inspection = await this.prisma.inspection.findUnique({ where: { request_id: id } });
     if (!inspection) {
-      throw new NotFoundException('No hay inspección agendada para esta solicitud.');
+      throw new NotFoundException('No inspection is scheduled for this request.');
     }
 
     const photo_urls: string[] = [];
@@ -731,7 +730,7 @@ export class RequestService {
         } catch {
           this.removeDocumentFile(storage.file_path);
           throw new InternalServerErrorException(
-            'No se pudo registrar el archivo de inspeccion.',
+            'The inspection file could not be registered.',
           );
         }
 
@@ -758,7 +757,7 @@ export class RequestService {
       data: {
         previous_status: request.status,
         new_status: request.status,
-        comment: 'Informe técnico de inspección cargado con evidencia fotográfica.',
+        comment: 'Technical inspection report uploaded with photographic evidence.',
         responsible: active_user.email,
         request_id: id,
       },
@@ -768,7 +767,7 @@ export class RequestService {
       active_user.id,
       active_user.email,
       'UPLOAD_INSPECTION_REPORT',
-      `Informe de inspección cargado para la solicitud ${id}`,
+      `Inspection report uploaded for request ${id}`,
     );
 
     return { id, status: request.status };
@@ -782,7 +781,7 @@ export class RequestService {
       where: { id },
       include: { property: true },
     });
-    if (!request) throw new NotFoundException('Solicitud no encontrada.');
+    if (!request) throw new NotFoundException('Request not found.');
 
     let target_state: RequestStatus;
     let payment_amount: number | null = null;
@@ -832,8 +831,8 @@ export class RequestService {
         previous_status: request.status,
         new_status: target_state,
         comment: is_approved
-          ? `Resolución favorable — monto calculado automáticamente: $${payment_amount}. ${resolve_dto.comments}`
-          : `Solicitud rechazada: ${resolve_dto.comments}`,
+          ? `Favorable resolution — amount calculated automatically: $${payment_amount}. ${resolve_dto.comments}`
+          : `Request rejected: ${resolve_dto.comments}`,
         responsible: active_user.email,
         request_id: id,
       },
@@ -843,7 +842,7 @@ export class RequestService {
       active_user.id,
       active_user.email,
       'RESOLVE_REQUEST',
-      `Solicitud resuelta → ${target_state}. Monto: $${payment_amount ?? 'N/A'}`,
+      `Request resolved → ${target_state}. Amount: $${payment_amount ?? 'N/A'}`,
     );
 
     return {
@@ -907,7 +906,7 @@ export class RequestService {
     } catch {
       this.removeDocumentFile(storage.file_path);
       throw new InternalServerErrorException(
-        'No se pudo registrar el documento adjunto.',
+        'The attachment could not be registered.',
       );
     }
 
@@ -917,11 +916,11 @@ export class RequestService {
           previous_status: access_context.status,
           new_status: access_context.status,
           comment:
-            `ALERTA DE INTEGRIDAD: El documento "${doc_name}" en carpeta ${dto.folder} ` +
-            `fue reemplazado y su hash SHA-256 cambió. ` +
-            `Hash anterior: ${previous_attachment.hash.substring(0, 16)}... → ` +
-            `Hash nuevo: ${hash.substring(0, 16)}... ` +
-            `Subido por: ${active_user.email}`,
+            `INTEGRITY ALERT: Document "${doc_name}" in folder ${dto.folder} ` +
+            `was replaced and its SHA-256 hash changed. ` +
+            `Previous hash: ${previous_attachment.hash.substring(0, 16)}... → ` +
+            `New hash: ${hash.substring(0, 16)}... ` +
+            `Uploaded by: ${active_user.email}`,
           responsible: 'SISTEMA',
           request_id: id,
         },
@@ -931,8 +930,8 @@ export class RequestService {
         active_user.id,
         active_user.email,
         'HASH_CHANGE_ALERT',
-        `Hash de firma cambió en doc "${doc_name}" del expediente ${id}. ` +
-        `Anterior: ${previous_attachment.hash.substring(0, 16)}... → Nuevo: ${hash.substring(0, 16)}...`,
+        `Signature hash changed on doc "${doc_name}" in request file ${id}. ` +
+        `Previous: ${previous_attachment.hash.substring(0, 16)}... → New: ${hash.substring(0, 16)}...`,
       );
     }
 
@@ -940,7 +939,7 @@ export class RequestService {
       active_user.id,
       active_user.email,
       'UPLOAD_ATTACHMENT',
-      `Documento "${attachment.name}" cargado en carpeta ${dto.folder} del expediente ${id}, sha256=${hash.substring(0, 16)}...`,
+      `Document "${attachment.name}" uploaded to folder ${dto.folder} in request file ${id}, sha256=${hash.substring(0, 16)}...`,
     );
 
     // Si el arquitecto sube un PDF firmado, verificar y capturar su certificado
@@ -1002,7 +1001,7 @@ export class RequestService {
         architect: { select: { id: true, name: true, lastname: true, cedula: true } },
       },
     });
-    if (!request) throw new NotFoundException('Solicitud no encontrada.');
+    if (!request) throw new NotFoundException('Request not found.');
 
     const signer = request.architect || request.citizen;
     return {
@@ -1045,7 +1044,7 @@ export class RequestService {
         ? report.warnings
         : [
             ...report.warnings,
-            'El contenido actual no coincide con el hash almacenado al cargar el adjunto.',
+            'The current content does not match the hash stored when the attachment was uploaded.',
           ],
       attachment_id: attachment.id,
       attachment_name: attachment.name,
@@ -1104,7 +1103,7 @@ export class RequestService {
         expected_signer,
         signatures: [],
         warnings: [
-          'No se pudo leer el archivo almacenado para verificar sus firmas.',
+          'The stored file could not be read to verify its signatures.',
         ],
         attachment_id: attachment.id,
         attachment_name: attachment.name,
@@ -1176,10 +1175,10 @@ export class RequestService {
       where: { id: attachment_id, request_id: id },
     });
     if (!attachment) {
-      throw new NotFoundException('Adjunto no encontrado en este expediente.');
+      throw new NotFoundException('Attachment not found in this request file.');
     }
     if (!this.isPdfAttachment(attachment)) {
-      throw new BadRequestException('La verificación de firmas solo admite documentos PDF.');
+      throw new BadRequestException('Signature verification only supports PDF documents.');
     }
 
     const expected_signer = await this.getExpectedSigner(id);
@@ -1205,7 +1204,7 @@ export class RequestService {
 
   private resolveAttachmentStoragePath(attachment: any) {
     if (!attachment?.url || typeof attachment.url !== 'string') {
-      throw new ForbiddenException('La ruta del documento no es valida.');
+      throw new ForbiddenException('The document path is not valid.');
     }
 
     const uploads_root = path.resolve(process.cwd(), 'uploads');
@@ -1222,7 +1221,7 @@ export class RequestService {
       this.resolveAttachmentStoragePath(attachment);
 
     if (!fs.existsSync(resolved_file_path)) {
-      throw new NotFoundException('El archivo fisico no existe.');
+      throw new NotFoundException('The physical file does not exist.');
     }
 
     let real_uploads_root: string;
@@ -1231,7 +1230,7 @@ export class RequestService {
       real_uploads_root = fs.realpathSync(uploads_root);
       real_file_path = fs.realpathSync(resolved_file_path);
     } catch {
-      throw new NotFoundException('El archivo fisico no existe.');
+      throw new NotFoundException('The physical file does not exist.');
     }
 
     const real_relative_path = path.relative(real_uploads_root, real_file_path);
@@ -1239,12 +1238,12 @@ export class RequestService {
       real_relative_path.startsWith('..') ||
       path.isAbsolute(real_relative_path)
     ) {
-      throw new ForbiddenException('La ruta del documento no es valida.');
+      throw new ForbiddenException('The document path is not valid.');
     }
 
     const file_stats = fs.statSync(real_file_path);
     if (!file_stats.isFile()) {
-      throw new NotFoundException('El archivo fisico no existe.');
+      throw new NotFoundException('The physical file does not exist.');
     }
 
     return {
@@ -1299,7 +1298,7 @@ export class RequestService {
       where: { id: attachment_id, request_id: id },
     });
     if (!attachment) {
-      throw new NotFoundException('Adjunto no encontrado en este expediente.');
+      throw new NotFoundException('Attachment not found in this request file.');
     }
     const file = this.resolveAttachmentFile(attachment);
 
@@ -1318,7 +1317,7 @@ export class RequestService {
       where: { id: attachment_id, request_id: id },
     });
     if (!attachment) {
-      throw new NotFoundException('Adjunto no encontrado en este expediente.');
+      throw new NotFoundException('Attachment not found in this request file.');
     }
 
     const file = this.resolveAttachmentFile(attachment);
@@ -1375,7 +1374,7 @@ export class RequestService {
       where: { id: attachment_id, request_id: id },
     });
     if (!attachment) {
-      throw new NotFoundException('Adjunto no encontrado en este expediente.');
+      throw new NotFoundException('Attachment not found in this request file.');
     }
 
     const file = this.resolveAttachmentFile(attachment);
@@ -1506,16 +1505,16 @@ export class RequestService {
       where: { id: attachment_id, request_id: id },
     });
     if (!attachment) {
-      throw new NotFoundException('Adjunto no encontrado en este expediente.');
+      throw new NotFoundException('Attachment not found in this request file.');
     }
     if (!attachment.hash) {
       throw new BadRequestException(
-        'El adjunto no tiene un hash SHA-256 verificable.',
+        'The attachment does not have a verifiable SHA-256 hash.',
       );
     }
     if (!attachment.ipfs_cid) {
       throw new BadRequestException(
-        'El adjunto debe subirse a IPFS antes de anclarlo en blockchain.',
+        'The attachment must be uploaded to IPFS before anchoring it on blockchain.',
       );
     }
 
@@ -1676,7 +1675,7 @@ export class RequestService {
     const attachment = await this.prisma.attachment.findFirst({
       where: { id: attachment_id, request_id: id },
     });
-    if (!attachment) throw new NotFoundException('Adjunto no encontrado en este expediente.');
+    if (!attachment) throw new NotFoundException('Attachment not found in this request file.');
 
     const { uploads_root, resolved_file_path } =
       this.resolveAttachmentStoragePath(attachment);
@@ -1692,7 +1691,7 @@ export class RequestService {
         fs.renameSync(file.file_path, staged_file_path);
       } catch {
         throw new InternalServerErrorException(
-          'No se pudo preparar el documento para su eliminacion.',
+          'The document could not be prepared for deletion.',
         );
       }
     }
@@ -1705,12 +1704,12 @@ export class RequestService {
           fs.renameSync(staged_file_path, resolved_file_path);
         } catch {
           throw new InternalServerErrorException(
-            'No se pudo restaurar el documento despues del error de base de datos.',
+            'The document could not be restored after the database error.',
           );
         }
       }
       throw new InternalServerErrorException(
-        'No se pudo eliminar el registro del documento.',
+        'The document record could not be deleted.',
       );
     }
 
@@ -1722,7 +1721,7 @@ export class RequestService {
       active_user.id,
       active_user.email,
       'DELETE_ATTACHMENT',
-      `Documento "${attachment.name}" eliminado del expediente ${id}`,
+      `Document "${attachment.name}" deleted from request file ${id}`,
     );
 
     return { deleted: true, attachment_id };

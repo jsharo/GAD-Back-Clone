@@ -60,7 +60,7 @@ export class RolesGuard implements CanActivate {
     }
 
     throw new ForbiddenException(
-      'No tienes permisos suficientes para realizar esta acción',
+      'You do not have sufficient permissions to perform this action',
     );
   }
 }

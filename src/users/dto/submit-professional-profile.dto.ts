@@ -21,7 +21,7 @@ export class SubmitProfessionalProfileDto {
 
   @ApiProperty({
     example: '0301000006',
-    description: 'Cédula ecuatoriana válida (requerida para verificación de firmas)',
+    description: 'Valid Ecuadorian national ID (required for signature verification)',
   })
   @Transform(({ value }) =>
     typeof value === 'string' ? value.replace(/\D/g, '') : value,
@@ -30,14 +30,14 @@ export class SubmitProfessionalProfileDto {
   @IsString()
   @Length(10, 10)
   @IsEcuadorianCedula({
-    message: 'La cédula no es válida. Debe ser un número de identidad ecuatoriano real.',
+    message: 'The ID number is not valid. It must be a valid Ecuadorian national ID number.',
   })
   cedula!: string;
 
   @ApiProperty({
     example: '650211A01',
     description:
-      'Código SENESCYT del título: nivel (2) + campo conocimiento (4) + carrera (letra + 2 dígitos)',
+      'SENESCYT title code: level (2) + knowledge field (4) + career (letter + 2 digits)',
   })
   @Transform(({ value }) =>
     typeof value === 'string'

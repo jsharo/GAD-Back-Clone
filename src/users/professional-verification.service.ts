@@ -50,7 +50,7 @@ export class ProfessionalVerificationService {
     const cedula = dto.cedula.trim();
     if (!isValidEcuadorianCedula(cedula)) {
       throw new BadRequestException(
-        'La cédula no es válida. Debe ser un número de identidad ecuatoriano real.',
+        'The ID number is not valid. It must be a valid Ecuadorian national ID number.',
       );
     }
 
@@ -63,7 +63,7 @@ export class ProfessionalVerificationService {
       select: { id: true },
     });
     if (existingCedula) {
-      throw new ConflictException('Esta cédula ya está registrada en el sistema.');
+      throw new ConflictException('This ID number is already registered in the system.');
     }
 
     const updated = await this.prisma.user.update({

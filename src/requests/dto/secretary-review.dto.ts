@@ -2,21 +2,21 @@ import { IsBoolean, IsString, IsOptional } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
- * SecretaryReviewDto — Cuerpo de la decisión de la secretaría sobre un trámite.
+ * SecretaryReviewDto — Request body for the secretary's decision on a procedure.
  *
- * Flujo (verificación automática y excepción no bloqueante):
- *  - El backend deriva signature_validated del informe de firmas.
- *  - Sin coincidencia, aprobar exige acknowledge_signature_warning=true.
- *  - approved=false lleva el expediente a OBSERVED.
- *  - approved=true lleva el expediente a PENDING_TECHNICIAN.
+ * Flow (automatic verification and non-blocking exception):
+ *  - The backend derives signature_validated from the signature report.
+ *  - Without a match, approval requires acknowledge_signature_warning=true.
+ *  - approved=false moves the request file to OBSERVED.
+ *  - approved=true moves the request file to PENDING_TECHNICIAN.
  */
 export class SecretaryReviewDto {
   @ApiPropertyOptional({
     example: false,
     deprecated: true,
     description:
-      'Compatibilidad con clientes anteriores. El backend calcula este valor automáticamente ' +
-      'a partir de la integridad de la firma y la coincidencia de identidad.',
+      'Backward compatibility for older clients. The backend calculates this value automatically ' +
+      'from signature integrity and identity matching.',
   })
   @IsBoolean()
   @IsOptional()
@@ -25,28 +25,28 @@ export class SecretaryReviewDto {
   @ApiPropertyOptional({
     example: true,
     description:
-      'Confirmación explícita para continuar cuando no existe una firma íntegra que coincida ' +
-      'con la persona esperada. No cambia el resultado automático.',
+      'Explicit confirmation to proceed when no intact signature matches ' +
+      'the expected person. Does not change the automatic result.',
   })
   @IsBoolean()
   @IsOptional()
   acknowledge_signature_warning?: boolean;
 
   /**
-   * Decisión final de la secretaría:
-   * - true  → aprueba el paso a revisión técnica (PENDING_TECHNICIAN)
-   * - false → observa el expediente (OBSERVED), que regresa al responsable para correcciones
+   * Final secretary decision:
+   * - true  → approve and forward to technical review (PENDING_TECHNICIAN)
+   * - false → observe the request file (OBSERVED), which returns to the responsible party for corrections
    */
   @ApiProperty({
     example: true,
-    description: 'true: aprobar y pasar a técnico | false: observar y devolver para correcciones.',
+    description: 'true: approve and forward to technician | false: observe and return for corrections.',
   })
   @IsBoolean()
   approved: boolean;
 
   @ApiPropertyOptional({
-    example: 'Documentación completa. Identidad verificada. Se remite a inspección técnica.',
-    description: 'Observaciones o motivo del rechazo.',
+    example: 'Documentation complete. Identity verified. Forwarded for technical inspection.',
+    description: 'Remarks or reason for rejection.',
   })
   @IsString()
   @IsOptional()

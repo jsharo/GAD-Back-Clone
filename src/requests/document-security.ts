@@ -66,7 +66,7 @@ function getValidatedMetadata(
 ) {
   const normalized_name = original_name?.trim();
   if (!normalized_name) {
-    throw new BadRequestException('El archivo debe tener un nombre valido.');
+    throw new BadRequestException('The file must have a valid name.');
   }
   if (
     normalized_name === '.' ||
@@ -75,24 +75,24 @@ function getValidatedMetadata(
     /[\\/]/.test(normalized_name) ||
     /[<>:"|?*]/.test(normalized_name)
   ) {
-    throw new BadRequestException('El nombre del archivo no es valido.');
+    throw new BadRequestException('The file name is not valid.');
   }
 
   const parsed_name = path.parse(normalized_name);
   if (!parsed_name.name || WINDOWS_RESERVED_NAME.test(parsed_name.name)) {
-    throw new BadRequestException('El nombre del archivo no es valido.');
+    throw new BadRequestException('The file name is not valid.');
   }
 
   const extension = parsed_name.ext.toLowerCase();
   const allowed_type = ALLOWED_DOCUMENT_TYPES[extension];
   if (!allowed_type || (policy === 'inspection-image' && !INSPECTION_EXTENSIONS.has(extension))) {
-    throw new BadRequestException('La extension del archivo no esta permitida.');
+    throw new BadRequestException('The file extension is not allowed.');
   }
 
   const normalized_mime = mime_type?.split(';', 1)[0].trim().toLowerCase();
   if (!allowed_type.mime_types.includes(normalized_mime)) {
     throw new BadRequestException(
-      'El tipo MIME no corresponde con la extension del archivo.',
+      'The MIME type does not match the file extension.',
     );
   }
 
@@ -112,20 +112,20 @@ export function validateDocumentFile(
   requested_name?: string,
 ): ValidatedDocument {
   if (!file) {
-    throw new BadRequestException('Se requiere un archivo para adjuntar.');
+    throw new BadRequestException('A file is required for upload.');
   }
   if (!Buffer.isBuffer(file.buffer) || file.buffer.length === 0) {
-    throw new BadRequestException('El archivo no puede estar vacio.');
+    throw new BadRequestException('The file cannot be empty.');
   }
   if (file.buffer.length > MAX_DOCUMENT_FILE_SIZE) {
-    throw new BadRequestException('El archivo excede el tamano maximo permitido de 10 MB.');
+    throw new BadRequestException('The file exceeds the maximum allowed size of 10 MB.');
   }
 
   const metadata = validateDocumentMetadata(file, policy);
   const allowed_type = ALLOWED_DOCUMENT_TYPES[metadata.extension];
   if (!allowed_type.signature(file.buffer)) {
     throw new BadRequestException(
-      'El contenido del archivo no corresponde con el formato declarado.',
+      'The file content does not match the declared format.',
     );
   }
 
@@ -147,7 +147,7 @@ export function sanitizeDocumentDisplayName(name: string) {
     .replace(/[<>:"|?*]/g, '_')
     .slice(0, 255);
   if (!sanitized || sanitized === '.' || sanitized === '..') {
-    throw new BadRequestException('El nombre del documento no es valido.');
+    throw new BadRequestException('The document name is not valid.');
   }
   return sanitized;
 }
@@ -163,7 +163,7 @@ export function ensurePathInsideRoot(root: string, candidate: string) {
     relative_path.startsWith('..') ||
     path.isAbsolute(relative_path)
   ) {
-    throw new ForbiddenException('La ruta del documento no es valida.');
+    throw new ForbiddenException('The document path is not valid.');
   }
   return candidate;
 }

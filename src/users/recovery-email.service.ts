@@ -190,14 +190,14 @@ export class RecoveryEmailService {
   }
 
   private async sendRecoveryVerificationEmail(to: string, code: string) {
-    const subject = 'Verifica tu email de recuperación — GAD Cañar';
-    const text = `Tu código para confirmar el email de recuperación es: ${code}. Expira en 15 minutos.`;
+    const subject = 'Verify your recovery email — GAD Cañar';
+    const text = `Your code to confirm your recovery email is: ${code}. It expires in 15 minutes.`;
     const html = `
       <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px">
         <h2 style="color:#004183;margin:0 0 16px">GAD Municipal de Cañar</h2>
-        <p style="color:#334155;line-height:1.5">Usa este código para confirmar tu email de recuperación:</p>
+        <p style="color:#334155;line-height:1.5">Use this code to confirm your recovery email:</p>
         <p style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#004183;margin:24px 0">${code}</p>
-        <p style="color:#64748b;font-size:14px">El código expira en 15 minutos. Si no solicitaste este cambio, ignora este mensaje.</p>
+        <p style="color:#64748b;font-size:14px">The code expires in 15 minutes. If you did not request this change, ignore this message.</p>
       </div>
     `;
     await this.emailService.send({ to, subject, text, html });

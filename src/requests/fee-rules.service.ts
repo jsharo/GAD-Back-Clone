@@ -20,16 +20,16 @@ export interface FeeCalculation {
  */
 const DEFAULT_FEES: Record<RequestType, Record<PropertyZone, { base: number; rate: number; label: string }>> = {
   BUILDING_LINE: {
-    URBAN: { base: 15.00, rate: 0.05, label: 'Línea de Fábricas — Zona Urbana' },
-    RURAL: { base: 10.00, rate: 0.03, label: 'Línea de Fábricas — Zona Rural' },
+    URBAN: { base: 15.00, rate: 0.05, label: 'Building Line — Urban Zone' },
+    RURAL: { base: 10.00, rate: 0.03, label: 'Building Line — Rural Zone' },
   },
   PLAN_APPROVAL: {
-    URBAN: { base: 30.00, rate: 0.20, label: 'Aprobación de Planos — Zona Urbana' },
-    RURAL: { base: 20.00, rate: 0.12, label: 'Aprobación de Planos — Zona Rural' },
+    URBAN: { base: 30.00, rate: 0.20, label: 'Plan Approval — Urban Zone' },
+    RURAL: { base: 20.00, rate: 0.12, label: 'Plan Approval — Rural Zone' },
   },
   CONSTRUCTION_PERMIT: {
-    URBAN: { base: 50.00, rate: 0.35, label: 'Permiso de Construcción — Zona Urbana' },
-    RURAL: { base: 35.00, rate: 0.25, label: 'Permiso de Construcción — Zona Rural' },
+    URBAN: { base: 50.00, rate: 0.35, label: 'Construction Permit — Urban Zone' },
+    RURAL: { base: 35.00, rate: 0.25, label: 'Construction Permit — Rural Zone' },
   },
 };
 
@@ -80,7 +80,7 @@ export class FeeRulesService {
         // Should never happen with current enums, but guard anyway
         base_fee    = 10.00;
         rate_per_m2 = 0.10;
-        description = `Trámite ${request_type} — ${zone}`;
+        description = `Procedure ${request_type} — ${zone}`;
       } else {
         base_fee    = def.base;
         rate_per_m2 = def.rate;
@@ -92,10 +92,10 @@ export class FeeRulesService {
     const total       = parseFloat((base_fee + area_charge).toFixed(2));
 
     const breakdown = [
-      `Tarifa base: $${base_fee.toFixed(2)}`,
+      `Base fee: $${base_fee.toFixed(2)}`,
       effective_area > 0
-        ? `Cargo por área: ${effective_area} m² × $${rate_per_m2}/m² = $${area_charge.toFixed(2)}`
-        : 'Sin cargo adicional por área (área no registrada)',
+        ? `Area charge: ${effective_area} m² × $${rate_per_m2}/m² = $${area_charge.toFixed(2)}`
+        : 'No additional area charge (area not recorded)',
       `TOTAL: $${total.toFixed(2)}`,
     ].join(' | ');
 
