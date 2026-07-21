@@ -1,5 +1,8 @@
 # Render Blueprint — GAD Cañar API
-# Dashboard: New → Blueprint → conectar https://github.com/jsharo/GAD-Back-Clone
+# New → Blueprint → conectar https://github.com/jsharo/GAD-Back-Clone
+#
+# Nota: el plan free NO soporta preDeployCommand; las migraciones
+# corren al arrancar (startCommand).
 
 services:
   - type: web
@@ -8,8 +11,7 @@ services:
     plan: free
     region: oregon
     buildCommand: npm install --include=dev && npm run build
-    preDeployCommand: npx prisma migrate deploy
-    startCommand: npm run start
+    startCommand: npm run start:prod
     envVars:
       - key: NODE_ENV
         value: production
