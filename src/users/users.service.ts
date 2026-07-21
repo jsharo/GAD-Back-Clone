@@ -73,8 +73,12 @@ export class UsersService {
       },
     });
 
-    if (!user || user.status !== UserStatus.ACTIVE) {
+    if (!user) {
       throw new UnauthorizedException('Invalid email or password');
+    }
+
+    if (user.status !== UserStatus.ACTIVE) {
+      throw new UnauthorizedException('User is inactive');
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password);

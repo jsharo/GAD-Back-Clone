@@ -1,5 +1,6 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsIn } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ASSIGNABLE_ROLES } from '../../common/enums/role.enum';
 
 export class CreateRoleDto {
   @ApiProperty({ example: 'TECHNICIAN' })
@@ -55,9 +56,16 @@ export class AssignRoleDto {
   @IsNotEmpty()
   userId!: string;
 
-  @ApiProperty({ example: 'TECHNICIAN' })
+  @ApiProperty({
+    example: 'TECHNICIAN',
+    enum: ASSIGNABLE_ROLES,
+    description: 'Only confirmed institutional roles',
+  })
   @IsString()
   @IsNotEmpty()
+  @IsIn(ASSIGNABLE_ROLES, {
+    message: `roleName must be one of: ${ASSIGNABLE_ROLES.join(', ')}`,
+  })
   roleName!: string;
 }
 
