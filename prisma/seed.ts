@@ -63,7 +63,7 @@ const DEMO_USERS: DemoUser[] = [
   {
     role: 'SECRETARY',
     email: 'secretaria@gadcanar.gob.ec',
-    password: '123456',
+    password: 'Demo1234!',
     name: 'Secretaria',
     lastname: 'Demo',
     cedula: '0100000001',
@@ -71,7 +71,7 @@ const DEMO_USERS: DemoUser[] = [
   {
     role: 'TECHNICIAN',
     email: 'tecnico.urbano@gadcanar.gob.ec',
-    password: '123456',
+    password: 'Demo1234!',
     name: 'Tecnico',
     lastname: 'Urbano',
     cedula: '0100000002',
@@ -79,7 +79,7 @@ const DEMO_USERS: DemoUser[] = [
   {
     role: 'FINANCIAL',
     email: 'financiero@gadcanar.gob.ec',
-    password: '123456',
+    password: 'Demo1234!',
     name: 'Financiero',
     lastname: 'Demo',
     cedula: '0100000003',
@@ -87,7 +87,7 @@ const DEMO_USERS: DemoUser[] = [
   {
     role: 'USER',
     email: 'arquitecto@gadcanar.gob.ec',
-    password: '123456',
+    password: 'Demo1234!',
     name: 'Arquitecto',
     lastname: 'Demo',
     cedula: '0100000004',
@@ -97,7 +97,7 @@ const DEMO_USERS: DemoUser[] = [
   {
     role: 'CITIZEN',
     email: 'ciudadano@correo.ec',
-    password: '123456',
+    password: 'Demo1234!',
     name: 'Ciudadano',
     lastname: 'Demo',
     cedula: '0100000005',

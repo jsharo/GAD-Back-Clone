@@ -1,6 +1,10 @@
-import { IsOptional, IsString, Length, MinLength } from 'class-validator';
+import { IsOptional, IsString, Length } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEcuadorianCedula } from '../../common/validators/is-ecuadorian-cedula.decorator';
+import {
+  IsStrongPassword,
+  StrongPasswordApiProperty,
+} from '../../common/validators/is-strong-password.decorator';
 
 export class UpdateUserDto {
   @ApiPropertyOptional()
@@ -27,9 +31,9 @@ export class UpdateUserDto {
   })
   cedula?: string;
 
-  @ApiPropertyOptional({ minLength: 8 })
+  @StrongPasswordApiProperty(false)
   @IsOptional()
   @IsString()
-  @MinLength(8)
+  @IsStrongPassword()
   password?: string;
 }

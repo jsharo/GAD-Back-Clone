@@ -6,8 +6,6 @@ import {
 
   IsNotEmpty,
 
-  MinLength,
-
   IsOptional,
 
   Length,
@@ -15,6 +13,11 @@ import {
 } from 'class-validator';
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+import {
+  IsStrongPassword,
+  StrongPasswordApiProperty,
+} from '../../common/validators/is-strong-password.decorator';
 
 
 
@@ -30,13 +33,13 @@ export class CreateUserDto {
 
 
 
-  @ApiProperty({ minLength: 8 })
+  @StrongPasswordApiProperty(true)
 
   @IsNotEmpty()
 
   @IsString()
 
-  @MinLength(8)
+  @IsStrongPassword()
 
   password!: string;
 
@@ -83,4 +86,3 @@ export class CreateUserDto {
   direction?: string;
 
 }
-
