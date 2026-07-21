@@ -1,39 +1,66 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Role } from '../../common/enums/role.enum';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
+import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
+import { RolesService } from '../../roles/roles.service';
 
+/**
+ * Access control: ADMINISTRATOR always allowed.
+ * If @Roles and/or @RequirePermissions are set, the user passes when
+ * they match ANY required role OR hold ANY required effective permission.
+ */
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly rolesService: RolesService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const requiredRoles = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
+    const requiredPermissions = this.reflector.getAllAndOverride<string[]>(
+      PERMISSIONS_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
-    if (!requiredRoles) {
+    const hasRoleReqs = Boolean(requiredRoles?.length);
+    const hasPermReqs = Boolean(requiredPermissions?.length);
+
+    if (!hasRoleReqs && !hasPermReqs) {
       return true;
     }
 
     const { user } = context.switchToHttp().getRequest();
-
     if (!user) {
       return false;
     }
 
-    // SUPERADMIN tiene acceso a todo (opcional, ajusta según necesidad)
     if (user.role === Role.ADMINISTRATOR) {
       return true;
     }
 
-    const hasRole = requiredRoles.some((role) => user.role === role);
-
-    if (!hasRole) {
-      throw new ForbiddenException('No tienes permisos suficientes para realizar esta acción');
+    if (hasRoleReqs && requiredRoles!.some((role) => user.role === role)) {
+      return true;
     }
 
-    return true;
+    if (hasPermReqs && user.id) {
+      const effective = await this.rolesService.getEffectivePermissions(user.id);
+      if (requiredPermissions!.some((p) => effective.includes(p))) {
+        return true;
+      }
+    }
+
+    throw new ForbiddenException(
+      'No tienes permisos suficientes para realizar esta acción',
+    );
   }
 }

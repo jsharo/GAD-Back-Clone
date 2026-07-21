@@ -28,8 +28,10 @@ import { ReviewProfessionalDto } from './dto/review-professional.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { Role } from '../common/enums/role.enum';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RolesService } from '../roles/roles.service';
 
 @ApiTags('users')
 @Controller('users')
@@ -39,6 +41,7 @@ export class UsersController {
     private readonly registrationService: RegistrationService,
     private readonly recoveryEmailService: RecoveryEmailService,
     private readonly professionalVerificationService: ProfessionalVerificationService,
+    private readonly rolesService: RolesService,
   ) {}
 
   @Post('register')
@@ -59,6 +62,7 @@ export class UsersController {
   @ApiBearerAuth()
   @Post('institutional')
   @Roles(Role.ADMINISTRATOR)
+  @RequirePermissions('users.write')
   @ApiOperation({ summary: 'Create an institutional user (admin only)' })
   async createInstitutional(
     @Body() dto: CreateInstitutionalUserDto,
@@ -77,6 +81,7 @@ export class UsersController {
   @ApiBearerAuth()
   @Get()
   @Roles(Role.ADMINISTRATOR, Role.SECRETARY)
+  @RequirePermissions('users.read')
   @ApiOperation({ summary: 'List all active users' })
   async findAll(
     @Query('role') role?: string,
@@ -112,10 +117,30 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @Get('me')
-  @ApiOperation({ summary: 'Get current user profile (incl. recovery email)' })
+  @ApiOperation({ summary: 'Get current user profile (incl. recovery email and permissions)' })
   async getMe(@CurrentUser() actor: { id: string }) {
-    const data = await this.recoveryEmailService.getMe(actor.id);
-    return { success: true, data };
+    const profile = await this.recoveryEmailService.getMe(actor.id);
+    const [role, permissions] = await Promise.all([
+      this.rolesService.getUserRoleName(actor.id),
+      this.rolesService.getEffectivePermissions(actor.id),
+    ]);
+    return {
+      success: true,
+      data: {
+        ...profile,
+        role,
+        permissions,
+      },
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Get('me/permissions')
+  @ApiOperation({ summary: 'Get effective permissions for the authenticated user' })
+  async getMyPermissions(@CurrentUser() actor: { id: string }) {
+    const permissions = await this.rolesService.getEffectivePermissions(actor.id);
+    return { success: true, data: { permissions } };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -219,6 +244,7 @@ export class UsersController {
   @ApiBearerAuth()
   @Get(':id')
   @Roles(Role.ADMINISTRATOR, Role.SECRETARY)
+  @RequirePermissions('users.read')
   @ApiOperation({ summary: 'Get user by id' })
   async findOne(@Param('id') id: string) {
     const user = await this.usersService.findById(id);
@@ -230,6 +256,7 @@ export class UsersController {
   @ApiBearerAuth()
   @Patch(':id')
   @Roles(Role.ADMINISTRATOR, Role.SECRETARY)
+  @RequirePermissions('users.write')
   @ApiOperation({ summary: 'Update user profile fields' })
   async update(
     @Param('id') id: string,
@@ -244,6 +271,7 @@ export class UsersController {
   @ApiBearerAuth()
   @Patch(':id/status')
   @Roles(Role.ADMINISTRATOR, Role.SECRETARY)
+  @RequirePermissions('users.write')
   @ApiOperation({ summary: 'Activate or deactivate user' })
   async updateStatus(
     @Param('id') id: string,
@@ -258,6 +286,7 @@ export class UsersController {
   @ApiBearerAuth()
   @Delete(':id')
   @Roles(Role.ADMINISTRATOR)
+  @RequirePermissions('users.write')
   @ApiOperation({ summary: 'Soft delete user' })
   async softDelete(
     @Param('id') id: string,

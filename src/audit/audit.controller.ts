@@ -4,6 +4,7 @@ import { AuditService } from './audit.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { Role } from '../common/enums/role.enum';
 
 @ApiTags('audit')
@@ -15,6 +16,7 @@ export class AuditController {
 
   @Get()
   @Roles(Role.ADMINISTRATOR)
+  @RequirePermissions('audit.read')
   @ApiOperation({ summary: 'List all audit logs' })
   async findAll() {
     const data = await this.audit_service.findAll();
@@ -23,6 +25,7 @@ export class AuditController {
 
   @Get('verify')
   @Roles(Role.ADMINISTRATOR)
+  @RequirePermissions('audit.read')
   @ApiOperation({ summary: 'Verify integrity and immutability of the log chain' })
   async verify() {
     const data = await this.audit_service.verifyIntegrity();

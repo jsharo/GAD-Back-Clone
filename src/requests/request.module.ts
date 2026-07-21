@@ -7,6 +7,7 @@ import { IpfsModule } from '../ipfs/ipfs.module';
 import { BlockchainModule } from '../blockchain/blockchain.module';
 import { DocumentSignatureModule } from '../signatures/document.signature.module';
 import { UsersModule } from '../users/users.module';
+import { RolesModule } from '../roles/roles.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { UsersModule } from '../users/users.module';
     IpfsModule,
     BlockchainModule,
     DocumentSignatureModule,
+    RolesModule,
     forwardRef(() => UsersModule),
   ],
   controllers: [RequestController],

@@ -30,6 +30,8 @@ export class AuthService {
       throw new UnauthorizedException('User has no assigned role');
     }
 
+    const permissions = await this.rolesService.getEffectivePermissions(user.id);
+
     const { accessToken, refreshToken } = await this.tokensService.generateTokens(
       user.id,
       user.email,
@@ -52,6 +54,7 @@ export class AuthService {
         id: user.id,
         email: user.email,
         role,
+        permissions,
         name: user.name,
         lastname: user.lastname,
         cedula: user.cedula,

@@ -44,6 +44,7 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { Role } from '../common/enums/role.enum';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
@@ -61,6 +62,7 @@ export class RequestController {
   // ──────────────────────────────────────────────────────────────────────────
   @Post()
   @Roles(Role.CITIZEN, Role.USER, Role.ADMINISTRATOR)
+  @RequirePermissions('requests.write')
   @ApiOperation({
     summary: 'Crear una solicitud de trámite',
     description:
@@ -86,6 +88,7 @@ export class RequestController {
 
   @Get('my-filings')
   @Roles(Role.USER, Role.ADMINISTRATOR)
+  @RequirePermissions('requests.read', 'requests.write')
   @ApiOperation({ summary: 'Expedientes ingresados por el profesional autenticado' })
   async findMyFilings(@CurrentUser() user: any) {
     const data = await this.request_service.findByArchitect(user.id);
@@ -94,6 +97,7 @@ export class RequestController {
 
   @Get()
   @Roles(Role.SECRETARY, Role.ADMINISTRATOR, Role.TECHNICIAN, Role.FINANCIAL)
+  @RequirePermissions('requests.read', 'requests.review')
   @ApiOperation({ summary: 'Listar todas las solicitudes (filtro opcional por estado)' })
   @ApiQuery({ name: 'status', required: false, description: 'Filtrar por estado de la solicitud' })
   async findAll(@Query('status') status?: string) {
@@ -166,6 +170,7 @@ export class RequestController {
   // ──────────────────────────────────────────────────────────────────────────
   @Post(':id/secretary-review')
   @Roles(Role.SECRETARY, Role.ADMINISTRATOR)
+  @RequirePermissions('requests.review')
   @ApiOperation({
     summary: 'Revisión de la secretaría: registrar firma y aprobar/observar el expediente',
     description:
@@ -188,6 +193,7 @@ export class RequestController {
   // ──────────────────────────────────────────────────────────────────────────
   @Patch(':id/status')
   @Roles(Role.SECRETARY, Role.ADMINISTRATOR, Role.TECHNICIAN, Role.FINANCIAL)
+  @RequirePermissions('requests.review')
   @ApiOperation({
     summary: 'Actualizar estado de la solicitud (uso general)',
     description: 'Para transiciones manuales como PAID → APPROVED. La secretaría usa /secretary-review.',
@@ -206,6 +212,7 @@ export class RequestController {
   // ──────────────────────────────────────────────────────────────────────────
   @Post(':id/schedule')
   @Roles(Role.SECRETARY, Role.ADMINISTRATOR)
+  @RequirePermissions('requests.review')
   @ApiOperation({ summary: 'Programar inspección técnica → estado INSPECTION' })
   async scheduleInspection(
     @Param('id') id: string,
@@ -221,6 +228,7 @@ export class RequestController {
   // ──────────────────────────────────────────────────────────────────────────
   @Post(':id/inspection-report')
   @Roles(Role.TECHNICIAN, Role.ADMINISTRATOR)
+  @RequirePermissions('requests.review')
   @ApiOperation({ summary: 'Subir informe técnico y fotos de la inspección' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
@@ -244,6 +252,7 @@ export class RequestController {
   // ──────────────────────────────────────────────────────────────────────────
   @Post(':id/resolve')
   @Roles(Role.TECHNICIAN, Role.SECRETARY, Role.ADMINISTRATOR, Role.FINANCIAL)
+  @RequirePermissions('requests.review')
   @ApiOperation({
     summary: 'Resolver la solicitud (aprobar o rechazar)',
     description:
