@@ -21,8 +21,14 @@ async function bootstrap() {
   app.use(cookieParser());
 
   // ── CORS ────────────────────────────────────────────────────────
+  // Trim trailing slash: browsers send Origin without it (…vercel.app),
+  // but dashboards often save FRONTEND_URL as …vercel.app/
+  const frontendOrigin = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(
+    /\/+$/,
+    '',
+  );
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: frontendOrigin,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     exposedHeaders: ['Content-Disposition', 'Content-Length'],
