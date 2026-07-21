@@ -158,7 +158,7 @@ export class UsersService {
       !existingCedula.deletedAt &&
       existingCedula.id !== excludeUserId
     ) {
-      throw new ConflictException('National ID is already registered');
+      throw new ConflictException('Esta cédula ya está registrada en el sistema.');
     }
   }
 
@@ -166,8 +166,15 @@ export class UsersService {
   async create(dto: CreateUserDto) {
     await this.assertUniqueEmail(dto.email);
 
-    if (dto.cedula) {
-      await this.assertUniqueCedula(dto.cedula);
+    let cedula: string | null = null;
+    if (dto.cedula?.trim()) {
+      cedula = dto.cedula.trim();
+      if (!isValidEcuadorianCedula(cedula)) {
+        throw new BadRequestException(
+          'La cédula no es válida. Debe ser un número de identidad ecuatoriano real.',
+        );
+      }
+      await this.assertUniqueCedula(cedula);
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, PASSWORD_SALT_ROUNDS);
@@ -176,7 +183,7 @@ export class UsersService {
       data: {
         email: dto.email,
         password: hashedPassword,
-        cedula: dto.cedula ?? null,
+        cedula,
         name: dto.name ?? null,
         lastname: dto.lastname ?? null,
         direction: dto.direction ?? null,
@@ -242,10 +249,6 @@ export class UsersService {
   async update(id: string, dto: UpdateUserDto, actor: { id: string; email: string }) {
     await this.findById(id);
 
-    if (dto.cedula) {
-      await this.assertUniqueCedula(dto.cedula, id);
-    }
-
     const { password, ...profileFields } = dto;
     const data: {
       name?: string;
@@ -254,6 +257,19 @@ export class UsersService {
       cedula?: string;
       password?: string;
     } = { ...profileFields };
+
+    if (dto.cedula !== undefined) {
+      const cedula = dto.cedula.trim();
+      if (cedula) {
+        if (!isValidEcuadorianCedula(cedula)) {
+          throw new BadRequestException(
+            'La cédula no es válida. Debe ser un número de identidad ecuatoriano real.',
+          );
+        }
+        await this.assertUniqueCedula(cedula, id);
+      }
+      data.cedula = cedula;
+    }
 
     if (password) {
       data.password = await bcrypt.hash(password, PASSWORD_SALT_ROUNDS);

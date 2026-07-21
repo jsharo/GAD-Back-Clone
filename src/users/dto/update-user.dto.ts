@@ -27,7 +27,7 @@ export class UpdateUserDto {
   @IsString()
   @Length(10, 10)
   @IsEcuadorianCedula({
-    message: 'cedula must be a valid Ecuadorian national ID number',
+    message: 'La cédula no es válida. Debe ser un número de identidad ecuatoriano real.',
   })
   cedula?: string;
 

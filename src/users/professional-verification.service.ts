@@ -63,7 +63,7 @@ export class ProfessionalVerificationService {
       select: { id: true },
     });
     if (existingCedula) {
-      throw new ConflictException('That national ID is already registered.');
+      throw new ConflictException('Esta cédula ya está registrada en el sistema.');
     }
 
     const updated = await this.prisma.user.update({

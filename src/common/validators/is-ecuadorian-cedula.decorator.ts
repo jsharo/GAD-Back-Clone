@@ -15,7 +15,7 @@ export class IsEcuadorianCedulaConstraint implements ValidatorConstraintInterfac
   }
 
   defaultMessage(): string {
-    return 'cedula must be a valid Ecuadorian national ID number';
+    return 'La cédula no es válida. Debe ser un número de identidad ecuatoriano real.';
   }
 }
 
