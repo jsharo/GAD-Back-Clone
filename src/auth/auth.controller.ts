@@ -9,25 +9,28 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 const IS_PROD = process.env.NODE_ENV === 'production';
 
+/** Cross-origin (Vercel ↔ Render) requires SameSite=None + Secure in production. */
+const COOKIE_BASE = {
+  httpOnly: true,
+  secure: IS_PROD,
+  sameSite: (IS_PROD ? 'none' : 'lax') as 'none' | 'lax',
+};
+
 function setTokenCookies(res: Response, accessToken: string, refreshToken: string) {
   res.cookie('access_token', accessToken, {
-    httpOnly: true,
-    secure: IS_PROD,
-    sameSite: IS_PROD ? 'strict' : 'lax',
+    ...COOKIE_BASE,
     maxAge: 15 * 60 * 1000, // 15 min
   });
   res.cookie('refresh_token', refreshToken, {
-    httpOnly: true,
-    secure: IS_PROD,
-    sameSite: IS_PROD ? 'strict' : 'lax',
+    ...COOKIE_BASE,
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
     path: '/api/v1/auth',
   });
 }
 
 function clearTokenCookies(res: Response) {
-  res.clearCookie('access_token');
-  res.clearCookie('refresh_token', { path: '/api/v1/auth' });
+  res.clearCookie('access_token', { ...COOKIE_BASE });
+  res.clearCookie('refresh_token', { ...COOKIE_BASE, path: '/api/v1/auth' });
 }
 
 @ApiTags('auth')
